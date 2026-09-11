@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "playwright": {
+      "description": "官方 Playwright MCP：compiler 可用它打开真实页面、读 ARIA 快照、验证 locator 后再出计划",
+      "enabled": false,
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--headless", "--isolated"],
+      "roles": ["compiler", "orchestrator"]
+    },
+    "obs-recorder": {
+      "description": "OBS 录制：执行时同步开始/停止 OBS 录制与切换场景（需要 OBS 30+ 并开启 WebSocket 服务）",
+      "enabled": false,
+      "command": "npx",
+      "args": ["tsx", "components/mcp/obs-recorder/server.ts"],
+      "env": { "OBS_WEBSOCKET_URL": "ws://127.0.0.1:4455", "OBS_WEBSOCKET_PASSWORD": "" },
+      "roles": ["orchestrator", "pipeline"]
+    }
+  }
+}

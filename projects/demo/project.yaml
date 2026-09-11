@@ -1,0 +1,8 @@
+# 本地演示站点：由 server 在 /demo/ 下静态托管，无需任何账号。
+# 四条演示用例分别覆盖：通过 / 步骤错误 / 缺数据 / 产品缺陷。
+id: demo
+name: 演示站点（本地）
+baseURL: http://localhost:${UTA_PORT:-4600}/demo/
+slowMo: 250
+viewport: { width: 1280, height: 800 }
+knowledgeSkills: []

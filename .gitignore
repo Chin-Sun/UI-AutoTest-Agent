@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+!data/.gitkeep
+.env
+*.log
+.DS_Store
+test-results/
+playwright-report/
+components/_drafts/*
+!components/_drafts/.gitkeep

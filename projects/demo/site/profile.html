@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>演示站点 · 资料</title><link rel="stylesheet" href="site.css"></head>
+<body>
+  <nav><a href="login.html">登录</a><a href="todos.html">待办</a><a href="redeem.html">兑换</a><a href="profile.html">资料</a></nav>
+  <main>
+    <h1>个人资料</h1>
+    <label>昵称 <input id="nick" autocomplete="off"></label>
+    <!-- 用例里写的是「提交」，实际按钮叫「保存」：演示 step-defect → 人指点 → 修正重跑 -->
+    <button id="save">保存</button>
+    <p id="saved" role="status"></p>
+  </main>
+  <script>
+    document.getElementById('save').addEventListener('click', () => {
+      document.getElementById('saved').textContent = document.getElementById('nick').value.trim() ? '已保存' : '昵称不能为空'
+    })
+  </script>
+</body>
+</html>

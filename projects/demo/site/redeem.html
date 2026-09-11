@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>演示站点 · 兑换</title><link rel="stylesheet" href="site.css"></head>
+<body>
+  <nav><a href="login.html">登录</a><a href="todos.html">待办</a><a href="redeem.html">兑换</a><a href="profile.html">资料</a></nav>
+  <main>
+    <h1>会员兑换</h1>
+    <label>兑换码 <input id="code" autocomplete="off"></label>
+    <button id="go">兑换</button>
+    <p id="result" role="status"></p>
+  </main>
+  <script>
+    document.getElementById('go').addEventListener('click', () => {
+      const ok = document.getElementById('code').value.trim() === 'VIP-2026'
+      document.getElementById('result').textContent = ok ? '兑换成功' : '兑换码无效'
+    })
+  </script>
+</body>
+</html>

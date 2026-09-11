@@ -1,0 +1,23 @@
+{
+  "name": "ui-test-agent",
+  "private": true,
+  "type": "module",
+  "description": "AI 驱动、组件可叠加的 Web UI 自动化测试平台（Playwright + Skill/MCP）",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @uta/server --filter @uta/web dev",
+    "build": "pnpm --filter @uta/web build",
+    "start": "pnpm build && pnpm --filter @uta/server start",
+    "test": "pnpm -r --workspace-concurrency=1 test",
+    "typecheck": "pnpm -r typecheck",
+    "playwright:install": "pnpm --filter @uta/runner exec playwright install chromium"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.0"
+  }
+}

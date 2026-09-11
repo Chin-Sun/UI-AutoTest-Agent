@@ -1,0 +1,34 @@
+# 模型可插拔：default 选一个 provider；LLM_PROVIDER 环境变量优先。
+# roles 可以把不同角色路由到不同模型（对应 dsh-agent-teams 成员的 provider/model 快照）。
+default: mock
+
+providers:
+  # 离线可用：规则编译/归因/修正，走完整 Agent Loop 与组件调用，用于演示与测试
+  mock:
+    type: mock
+
+  claude:
+    type: anthropic
+    model: claude-opus-5
+    apiKeyEnv: ANTHROPIC_API_KEY # 未设置时 SDK 也会读取 `ant auth login` 的凭据
+    effort: high
+    # 服务端拒答回退：fallbacks: "default"（beta server-side-fallback-2026-07-01）
+    refusalFallback: true
+
+  deepseek:
+    type: openai-compatible
+    baseURL: https://api.deepseek.com
+    model: deepseek-chat
+    apiKeyEnv: DEEPSEEK_API_KEY
+
+  qwen:
+    type: openai-compatible
+    baseURL: https://dashscope.aliyuncs.com/compatible-mode/v1
+    model: qwen-plus
+    apiKeyEnv: DASHSCOPE_API_KEY
+
+roles: {}
+#  compiler: claude
+#  triager: deepseek
+#  repairer: claude
+#  orchestrator: claude

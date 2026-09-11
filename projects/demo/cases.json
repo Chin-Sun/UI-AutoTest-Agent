@@ -1,0 +1,29 @@
+[
+  {
+    "title": "登录成功后显示欢迎语",
+    "module": "登录",
+    "steps": ["打开「login.html」", "在「用户名」输入「alice」", "在「密码」输入「secret」", "点击「登录」按钮"],
+    "expected": ["页面显示「欢迎，alice」"]
+  },
+  {
+    "title": "修改昵称并保存",
+    "module": "个人资料",
+    "steps": ["打开「profile.html」", "在「昵称」输入「小明」", "点击「提交」按钮"],
+    "expected": ["页面显示「已保存」"],
+    "notes": ["演示 step-defect：页面上的按钮实际叫「保存」"]
+  },
+  {
+    "title": "使用 VIP 兑换码兑换会员",
+    "module": "会员",
+    "steps": ["打开「redeem.html」", "在「兑换码」输入「${data.vipCode}」", "点击「兑换」按钮"],
+    "expected": ["页面显示「兑换成功」"],
+    "notes": ["演示 data-missing：兑换码需要人在门禁里补充（VIP-2026）"]
+  },
+  {
+    "title": "添加两条待办后计数正确",
+    "module": "待办",
+    "steps": ["打开「todos.html」", "在「新待办」输入「买牛奶」", "点击「添加」按钮", "在「新待办」输入「写周报」", "点击「添加」按钮"],
+    "expected": ["页面显示「写周报」", "页面显示「共 2 项」"],
+    "notes": ["演示 product-defect：站点埋了计数少 1 的缺陷"]
+  }
+]

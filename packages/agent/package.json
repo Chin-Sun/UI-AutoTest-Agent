@@ -1,0 +1,22 @@
+{
+  "name": "@uta/agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@uta/core": "workspace:*",
+    "gray-matter": "^4.0.3",
+    "openai": "^7.13.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.6.1"
+  }
+}

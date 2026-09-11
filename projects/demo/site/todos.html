@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>演示站点 · 待办</title><link rel="stylesheet" href="site.css"></head>
+<body>
+  <nav><a href="login.html">登录</a><a href="todos.html">待办</a><a href="redeem.html">兑换</a><a href="profile.html">资料</a></nav>
+  <main>
+    <h1>待办</h1>
+    <div class="row">
+      <input id="new" placeholder="新待办" aria-label="新待办">
+      <button id="add">添加</button>
+    </div>
+    <ul data-testid="todo-list" id="list"></ul>
+    <p data-testid="todo-count" id="count">共 0 项</p>
+  </main>
+  <script>
+    const items = []
+    const render = () => {
+      document.getElementById('list').innerHTML = items.map((t) => `<li>${t}</li>`).join('')
+      // 埋点缺陷：两项及以上时计数少 1（演示 product-defect 进入审阅与报告）
+      const shown = items.length >= 2 ? items.length - 1 : items.length
+      document.getElementById('count').textContent = `共 ${shown} 项`
+    }
+    document.getElementById('add').addEventListener('click', () => {
+      const input = document.getElementById('new')
+      if (input.value.trim() === '') return
+      items.push(input.value.trim())
+      input.value = ''
+      render()
+    })
+  </script>
+</body>
+</html>

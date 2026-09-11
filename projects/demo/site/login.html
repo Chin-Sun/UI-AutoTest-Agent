@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>演示站点 · 登录</title><link rel="stylesheet" href="site.css"></head>
+<body>
+  <nav><a href="login.html">登录</a><a href="todos.html">待办</a><a href="redeem.html">兑换</a><a href="profile.html">资料</a></nav>
+  <main>
+    <h1>登录</h1>
+    <form id="f">
+      <label>用户名 <input name="user" autocomplete="off"></label>
+      <label>密码 <input name="pass" type="password"></label>
+      <button type="submit">登录</button>
+    </form>
+    <p id="msg" role="status"></p>
+    <p data-testid="welcome" id="welcome"></p>
+  </main>
+  <script>
+    document.getElementById('f').addEventListener('submit', (e) => {
+      e.preventDefault()
+      const user = e.target.user.value.trim()
+      const ok = user !== '' && e.target.pass.value === 'secret'
+      document.getElementById('msg').textContent = ok ? '' : '用户名或密码错误'
+      // 模拟接口延迟，让直播能看清
+      setTimeout(() => { if (ok) document.getElementById('welcome').textContent = `欢迎，${user}` }, 300)
+    })
+  </script>
+</body>
+</html>

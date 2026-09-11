@@ -1,0 +1,17 @@
+# MolarData 标注平台（第一个真实被测项目）。
+# 凭据与登录态不复制进本仓库：直接引用 molardata-e2e 生成的 storageState。
+# 先在 molardata-e2e 里执行 `npm run auth:all` 生成 auth/*.json。
+id: molardata
+name: MolarData 标注平台
+baseURL: ${MOLAR_BASE_URL:-https://molardata.invalid}
+authRoles:
+  admin: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/admin.json
+  annotator: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/annotator.json
+  reviewer: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/reviewer.json
+defaultAuthRole: admin
+slowMo: 300
+viewport: { width: 1600, height: 900 }
+knowledgeSkills: [molar-platform]
+importers:
+  # 功能点清单（testcases/0N-*.md，条目形如「- [ ] **A1** ……」）
+  checklistDir: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/testcases
