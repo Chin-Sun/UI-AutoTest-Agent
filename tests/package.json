@@ -1,0 +1,17 @@
+{
+  "name": "@uta/tests",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "端到端流程测试：真实服务 + 真实浏览器 + mock LLM",
+  "scripts": {
+    "test": "node ../scripts/run-tests.mjs --project e2e",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@uta/core": "workspace:*",
+    "@uta/server": "workspace:*",
+    "playwright": "^1.63.0",
+    "vite": "^8.2.2"
+  }
+}

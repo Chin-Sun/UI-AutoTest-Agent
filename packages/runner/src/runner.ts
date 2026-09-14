@@ -23,7 +23,7 @@ export interface RunPlanOptions {
   storageState?: string
   headed?: boolean
   slowMo?: number
-  viewport?: { width: number; height: number }
+  viewport?: { width: number, height: number }
   /** 证据目录的绝对路径 */
   evidenceDir: string
   /** 证据在 data 根下的相对路径前缀，写进 StepResult 供前端取用 */
@@ -63,7 +63,7 @@ export function locate(page: Page, target: Target, data: Readonly<Record<string,
   return page.locator(r(target.css))
 }
 
-async function poll<T>(probe: () => Promise<T>, ok: (value: T) => boolean, timeoutMs: number): Promise<{ ok: boolean; last: T | undefined }> {
+async function poll<T>(probe: () => Promise<T>, ok: (value: T) => boolean, timeoutMs: number): Promise<{ ok: boolean, last: T | undefined }> {
   const deadline = Date.now() + timeoutMs
   let last: T | undefined
   for (;;) {
@@ -78,7 +78,7 @@ async function poll<T>(probe: () => Promise<T>, ok: (value: T) => boolean, timeo
   }
 }
 
-function matchesUrl(url: string, expected: string): boolean {
+export function matchesUrl(url: string, expected: string): boolean {
   const regex = /^\/(.+)\/([a-z]*)$/.exec(expected)
   return regex === null ? url.includes(expected) : new RegExp(regex[1]!, regex[2]).test(url)
 }
@@ -145,7 +145,7 @@ async function executeStep(page: Page, step: Step, opts: RunPlanOptions): Promis
   }
 }
 
-export function classifyError(step: Step, error: unknown): { kind: StepErrorKind; message: string } {
+export function classifyError(step: Step, error: unknown): { kind: StepErrorKind, message: string } {
   const message = (error instanceof Error ? error.message : String(error)).split('\n').slice(0, 6).join('\n')
   if (error instanceof AssertionFailure) return { kind: 'assertion', message }
   if (/net::ERR_|NS_ERROR_|ECONNREFUSED/.test(message)) return { kind: 'navigation', message }

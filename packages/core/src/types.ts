@@ -24,6 +24,13 @@ export const TargetSchema = z.union([
 ])
 export type Target = z.infer<typeof TargetSchema>
 
+/**
+ * 流程阶段：setup 造前置数据 → action 执行被测操作 → decision 流程中需要选择的地方
+ * → verify 断言 → cleanup 清理本次造的数据
+ */
+export const FLOW_STAGES = ['setup', 'action', 'decision', 'verify', 'cleanup'] as const
+export type FlowStage = (typeof FLOW_STAGES)[number]
+
 export const StepSchema = z.object({
   id: z.string().min(1),
   action: z.enum(STEP_ACTIONS),
@@ -34,10 +41,40 @@ export const StepSchema = z.object({
   expect: z.string().optional(),
   /** 对应原用例的第几句（0 起），用于前端对照 */
   caseRef: z.number().int().min(0).optional(),
+  stage: z.enum(FLOW_STAGES).optional(),
   timeoutMs: z.number().int().positive().optional(),
   note: z.string().optional(),
 })
 export type Step = z.infer<typeof StepSchema>
+
+/**
+ * 计划声明的测试数据，按来源优先级：catalog 项目数据目录 > generated 执行时生成
+ * > setup 由流程准备阶段在页面上造出 > human 以上都做不到，由门禁请人补
+ */
+export const DATA_SOURCES = ['catalog', 'generated', 'setup', 'human'] as const
+export type DataSource = (typeof DATA_SOURCES)[number]
+
+export const DataBindingSchema = z.object({
+  key: z.string().regex(/^[A-Za-z0-9_.-]+$/, 'key 只能包含字母、数字、_ . -'),
+  source: z.enum(DATA_SOURCES),
+  /** generated/setup 的取值或模板（支持 {{case}} {{ts}} {{rand}}）；catalog 可不填，执行时取目录值 */
+  value: z.string().optional(),
+  /** catalog 来源引用的目录条目 key */
+  ref: z.string().optional(),
+  reason: z.string().optional(),
+})
+export type DataBinding = z.infer<typeof DataBindingSchema>
+
+/** 决策点：用例没写死、由 Agent 在流程中做出的选择 */
+export const DecisionSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  options: z.array(z.string().min(1)).min(1),
+  chosen: z.string().min(1),
+  reason: z.string().min(1),
+  stepIds: z.array(z.string()).default([]),
+})
+export type Decision = z.infer<typeof DecisionSchema>
 
 // ---------- 用例 / 计划 ----------
 
@@ -70,6 +107,8 @@ export const StepPlanSchema = z.object({
   version: z.number().int().min(1),
   status: z.enum(PLAN_STATUSES),
   steps: z.array(StepSchema).min(1),
+  data: z.array(DataBindingSchema).default([]),
+  decisions: z.array(DecisionSchema).default([]),
   authRole: z.string().optional(),
   createdBy: z.enum(['agent', 'human']),
   /** 由门禁修正产生时记录来源，形成可追溯的修正链 */
@@ -210,6 +249,16 @@ export const ReportSchema = z.object({
 })
 export type Report = z.infer<typeof ReportSchema>
 
+/** 项目测试数据目录中的一条：compiler 通过 list_test_data 查看并引用 */
+export const TestDataEntrySchema = z.object({
+  key: z.string().min(1),
+  description: z.string().default(''),
+  /** 为空表示未配置（例如环境变量没填） */
+  value: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+})
+export type TestDataEntry = z.infer<typeof TestDataEntrySchema>
+
 export const ProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -219,11 +268,33 @@ export const ProjectSchema = z.object({
   defaultAuthRole: z.string().optional(),
   slowMo: z.number().int().min(0).default(0),
   viewport: z.object({ width: z.number(), height: z.number() }).default({ width: 1280, height: 800 }),
+  /** 动作 / 断言超时（毫秒），不填使用执行器默认值（8000 / 5000） */
+  actionTimeoutMs: z.number().int().positive().optional(),
+  assertTimeoutMs: z.number().int().positive().optional(),
   /** 注入给 compiler 的项目知识 skill 名 */
   knowledgeSkills: z.array(z.string()).default([]),
   importers: z.record(z.string(), z.string()).default({}),
+  /** 额外的 .env 文件：只用于展开 project.yaml / test-data.yaml 里的 ${VAR}，不会整体交给模型 */
+  envFile: z.string().optional(),
+  /** 来自项目目录下的 test-data.yaml */
+  testData: z.array(TestDataEntrySchema).default([]),
 })
 export type Project = z.infer<typeof ProjectSchema>
+
+/** 一次 Agent 运行的 Token 用量；ask 等全局请求没有 projectId */
+export const UsageRecordSchema = z.object({
+  id: z.string(),
+  /** 与事件总线的 scope 一致：compile:<caseId>、triage:<runId>、repair:<findingId>、report:<projectId>、ask */
+  scope: z.string(),
+  role: z.string(),
+  model: z.string(),
+  projectId: z.string().optional(),
+  input: z.number().int().min(0),
+  output: z.number().int().min(0),
+  calls: z.number().int().min(0),
+  createdAt: z.number(),
+})
+export type UsageRecord = z.infer<typeof UsageRecordSchema>
 
 export interface GatePolicy {
   /** 同一用例超过此轮次后升级，不再自动推进 */

@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "node ../../scripts/run-tests.mjs --project agent"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.124.0",

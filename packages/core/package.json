@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "node ../../scripts/run-tests.mjs --project core"
   },
   "dependencies": {
     "zod": "^4.6.1"

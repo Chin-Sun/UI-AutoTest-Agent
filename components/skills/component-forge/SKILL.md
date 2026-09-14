@@ -16,6 +16,7 @@ roles: [orchestrator]
 - **mcp**：`content` 是一个 TypeScript MCP server（stdio）的完整源码，基于 `@modelcontextprotocol/sdk` 的 `McpServer` + `StdioServerTransport`。适合需要执行代码的能力，例如下载文件校验、调用被测系统 API 造数据、图像比对。
 
 ## 约束
+
 - 草稿写入 `components/_drafts/<name>/`，**不会自动执行**。人在「组件中心」审阅后批准才会移入正式目录并热加载。
 - 先 `list_components` 确认没有重复能力，能改进已有组件就不要新建。
 - 描述写清触发条件（什么时候该用它），注册表只把描述放进提示，正文按需加载。

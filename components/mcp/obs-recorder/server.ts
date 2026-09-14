@@ -5,7 +5,8 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import OBSWebSocket from 'obs-websocket-js'
+// 显式使用 JSON 协议（Node 下默认是 msgpack）；OBS 两种都支持，JSON 便于排查
+import OBSWebSocket from 'obs-websocket-js/json'
 import { z } from 'zod'
 
 const obs = new OBSWebSocket()
@@ -19,7 +20,7 @@ async function ensureConnected(): Promise<void> {
   connected = true
 }
 
-type Reply = { content: { type: 'text'; text: string }[]; isError?: boolean }
+type Reply = { content: { type: 'text', text: string }[], isError?: boolean }
 
 function tool(fn: (args: Record<string, unknown>) => Promise<string>): (args: Record<string, unknown>) => Promise<Reply> {
   return async (args) => {
@@ -41,7 +42,7 @@ server.registerTool('status', { description: '查询 OBS 连接与录制状态' 
 
 server.registerTool('list_scenes', { description: '列出 OBS 场景' }, tool(async () => {
   const { scenes } = await obs.call('GetSceneList')
-  return scenes.map((scene) => String(scene['sceneName'])).join('\n')
+  return scenes.map((scene) => scene['sceneName']).filter((name): name is string => typeof name === 'string').join('\n')
 }))
 
 server.registerTool('set_scene', { description: '切换 OBS 场景', inputSchema: { scene: z.string() } }, tool(async (args) => {

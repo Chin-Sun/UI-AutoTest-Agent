@@ -13,7 +13,7 @@ type Draft = Omit<Step, 'id' | 'caseRef'>
 
 const CLICK_ROLES: Record<string, string> = { 链接: 'link', 标签页: 'tab', 菜单项: 'menuitem', 复选框: 'checkbox' }
 
-const ACTION_RULES: { test: RegExp; build: (m: RegExpMatchArray) => Draft }[] = [
+const ACTION_RULES: { test: RegExp, build: (m: RegExpMatchArray) => Draft }[] = [
   { test: re(`^(?:打开|访问|进入)\\s*${Q}`), build: (m) => ({ action: 'goto', value: m[1]! }) },
   { test: re(`^(?:在\\s*)?${Q}\\s*(?:中|里|框|输入框)?\\s*(?:输入|填写|填入)\\s*${Q}`), build: (m) => ({ action: 'fill', target: { label: m[1]! }, value: m[2]! }) },
   { test: re(`(?:选择|选中)\\s*${Q}\\s*为\\s*${Q}`), build: (m) => ({ action: 'select', target: { label: m[1]! }, value: m[2]! }) },
@@ -28,7 +28,7 @@ const ACTION_RULES: { test: RegExp; build: (m: RegExpMatchArray) => Draft }[] = 
   { test: /^等待\s*(\d+)\s*(毫秒|ms|秒)/, build: (m) => ({ action: 'waitFor', value: String(Number(m[1]) * (m[2] === '秒' ? 1000 : 1)) }) },
 ]
 
-const EXPECT_RULES: { test: RegExp; build: (m: RegExpMatchArray) => Draft }[] = [
+const EXPECT_RULES: { test: RegExp, build: (m: RegExpMatchArray) => Draft }[] = [
   { test: re(`(?:URL|网址|地址)\\s*(?:包含|为|是)\\s*${Q}`), build: (m) => ({ action: 'assertUrl', expect: m[1]! }) },
   { test: re(`${Q}\\s*的值(?:为|是)\\s*${Q}`), build: (m) => ({ action: 'assertValue', target: { label: m[1]! }, expect: m[2]! }) },
   { test: re(`(?:不显示|不再显示|不出现)\\s*${Q}`), build: (m) => ({ action: 'assertHidden', target: { text: m[1]! } }) },
@@ -44,7 +44,7 @@ function match(sentence: string, rules: typeof ACTION_RULES): Draft | undefined 
   return undefined
 }
 
-export function heuristicCompile(testCase: { steps: string[]; expected: string[] }): { steps: Step[]; rationale: string; unparsed: string[] } {
+export function heuristicCompile(testCase: { steps: string[], expected: string[] }): { steps: Step[], rationale: string, unparsed: string[] } {
   const steps: Step[] = []
   const unparsed: string[] = []
   const sentences = [
@@ -60,7 +60,7 @@ export function heuristicCompile(testCase: { steps: string[]; expected: string[]
   })
   const rationale = unparsed.length === 0
     ? '规则引擎按「」标注逐句编译'
-    : `规则引擎无法理解 ${unparsed.length} 句（${unparsed.join('；')}），请改写为规范句式或配置真实 LLM`
+    : `规则引擎无法理解 ${unparsed.length} 句（${unparsed.join('；')}）。规则引擎只认「」标注的规范句式；要让 Agent 自行理解用例、挑选测试数据并生成分阶段流程，请在 config/llm.yaml 的 roles 里把 compiler 指向真实模型（如 claude）`
   return { steps, rationale, unparsed }
 }
 
@@ -155,7 +155,7 @@ function retarget(target: Target, value: string): Target {
   return { css: value }
 }
 
-export function heuristicRepair(input: RepairInput): { steps: Step[]; rationale: string } {
+export function heuristicRepair(input: RepairInput): { steps: Step[], rationale: string } {
   if ((input.feedback.stepPatches?.length ?? 0) > 0) {
     return { steps: applyStepPatches(input.steps, input.feedback.stepPatches), rationale: '按人工直接修改的步骤更新' }
   }

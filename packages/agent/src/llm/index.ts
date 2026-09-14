@@ -57,7 +57,7 @@ export function createAdapter(config: ProviderConfig): LlmAdapter {
 }
 
 /** 按角色路由到 provider，实例缓存复用 */
-export function createLlmRouter(config: LlmConfig): { forRole(role: string): LlmAdapter; describe(): Record<string, string> } {
+export function createLlmRouter(config: LlmConfig): { forRole(role: string): LlmAdapter, describe(): Record<string, string> } {
   const cache = new Map<string, LlmAdapter>()
   const providerFor = (role: string) => config.roles?.[role] ?? config.default
   return {

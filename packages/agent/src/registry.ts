@@ -7,6 +7,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import matter from 'gray-matter'
+import { NotFoundError } from '@uta/core'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
@@ -120,7 +121,7 @@ export class ComponentRegistry {
       await withTimeout(client.connect(transport), 60_000, `连接 MCP ${name} 超时`)
       const listed = await client.listTools()
       state.client = client
-      state.tools = listed.tools.map((tool) => ({ name: tool.name, description: tool.description ?? '', inputSchema: tool.inputSchema as Record<string, unknown> }))
+      state.tools = listed.tools.map((tool) => ({ name: tool.name, description: tool.description ?? '', inputSchema: tool.inputSchema }))
       state.status = 'ready'
     } catch (error) {
       state.status = 'error'
@@ -144,7 +145,7 @@ export class ComponentRegistry {
     if (state?.client === undefined || state.status !== 'ready') throw new Error(`MCP ${server} 未就绪（${state?.status ?? '未注册'}）`)
     const result = await state.client.callTool({ name: tool, arguments: args })
     const content = Array.isArray(result.content) ? result.content : []
-    const text = content.map((item: { type: string; text?: string }) => (item.type === 'text' ? item.text ?? '' : `[${item.type}]`)).join('\n')
+    const text = content.map((item: { type: string, text?: string }) => (item.type === 'text' ? item.text ?? '' : `[${item.type}]`)).join('\n')
     if (result.isError === true) throw new Error(text || `${server}.${tool} 执行失败`)
     return text
   }
@@ -180,7 +181,7 @@ export class ComponentRegistry {
     ].join('\n')
   }
 
-  describe(): { skills: SkillInfo[]; mcp: Omit<McpServerState, 'client'>[] } {
+  describe(): { skills: SkillInfo[], mcp: Omit<McpServerState, 'client'>[] } {
     return {
       skills: [...this.skills.values()],
       mcp: [...this.mcp.values()].map(({ client: _client, ...rest }) => rest),
@@ -197,6 +198,7 @@ export class ComponentRegistry {
     if (!NAME.test(input.name)) throw new Error('组件名必须是 kebab-case（小写字母、数字、连字符，2-49 位）')
     if (this.skills.has(input.name) || this.mcp.has(input.name)) throw new Error(`组件 ${input.name} 已存在，请改进它而不是新建`)
     const dir = join(this.draftsDir, input.name)
+    if (existsSync(dir)) throw new Error(`草稿 ${input.name} 已存在，请先批准或拒绝`)
     await mkdir(dir, { recursive: true })
     const info: DraftInfo = { name: input.name, kind: input.kind, description: input.description, roles: input.roles, createdAt: Date.now() }
     await writeFile(join(dir, 'draft.json'), `${JSON.stringify(info, null, 2)}\n`)
@@ -223,7 +225,9 @@ export class ComponentRegistry {
 
   /** 人批准：skill 移入 skills/ 并热加载；mcp 移入 mcp/ 并以 disabled 登记，需人再手动启用 */
   async approveDraft(name: string): Promise<void> {
+    if (!NAME.test(name)) throw new Error('非法组件名')
     const dir = join(this.draftsDir, name)
+    if (!existsSync(join(dir, 'draft.json'))) throw new NotFoundError(`草稿 ${name} 不存在`)
     const info = JSON.parse(await readFile(join(dir, 'draft.json'), 'utf8')) as DraftInfo
     await rm(join(dir, 'draft.json'))
     await mkdir(join(this.dir, info.kind === 'skill' ? 'skills' : 'mcp'), { recursive: true })
@@ -236,7 +240,7 @@ export class ComponentRegistry {
     const config = await this.readMcpConfig()
     config.servers[name] = { description: info.description, enabled: false, command: 'npx', args: ['tsx', `components/mcp/${name}/server.ts`], roles: info.roles }
     await writeFile(this.mcpConfigPath, `${JSON.stringify(config, null, 2)}\n`)
-    await this.connect(name, config.servers[name]!)
+    await this.connect(name, config.servers[name])
   }
 
   async rejectDraft(name: string): Promise<void> {
@@ -245,7 +249,7 @@ export class ComponentRegistry {
   }
 
   async close(): Promise<void> {
-    await Promise.all([...this.mcp.values()].map((state) => state.client?.close().catch(() => undefined)))
+    await Promise.all([...this.mcp.values()].flatMap((state) => (state.client === undefined ? [] : [state.client.close().catch(() => undefined)])))
   }
 }
 

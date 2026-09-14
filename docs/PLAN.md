@@ -9,7 +9,7 @@
 ### dsh-agent-teams 架构要点（被借鉴的部分）
 
 | dsh-agent-teams 机制 | 位置 | 在新平台中的对应 |
-|---|---|---|
+| --- | --- | --- |
 | Captain 会话 + 注入的 usage 协议（系统提示分段） | `src/index.ts` `usageSectionText()` | Orchestrator Agent + 由组件注册表动态拼接的系统提示 |
 | 成员 = 带 persona 的可续聊子 Agent，并有工具黑名单 | `src/members.ts` `MEMBER_DENIED_TOOLS` | 角色子 Agent（Compiler / Triager / Repairer / Reporter），每个角色有工具白名单 |
 | 工具注册表 `ctx.tools.register(defineTool)` | `src/tools.ts` | ComponentRegistry：Skill 加载器 + MCP 客户端管理器，工具名统一加命名空间 |
@@ -27,7 +27,7 @@
 
 ## 总体架构
 
-```
+```text
 ┌──────────────────────── Web 前端 (React + Vite) ────────────────────────┐
 │ ①用例录入  ②步骤编译/审批  ③执行直播  ④失败门禁/反馈  ⑤结果审阅/报告  ⑥组件中心 │
 └───────────────▲ REST ─────────────────────▲ WebSocket(帧/步骤/状态) ──────┘
@@ -63,7 +63,7 @@
 
 Pipeline 状态机（仿照任务 DAG 的 `pending→claimed→in_progress→终态`，终态只读）：
 
-```
+```text
 Case(draft) ─compile→ Plan(draft) ─人审批→ Plan(approved) ─→ Run(queued→running)
    Run passed ─→ 结束
    Run failed ─→ Triager 归因 → Finding
@@ -75,6 +75,7 @@ Case(draft) ─compile→ Plan(draft) ─人审批→ Plan(approved) ─→ Run(
 ```
 
 门禁纯函数（`packages/core/src/gates.ts`，仿照 `quality-gates.ts`）：
+
 - `canPass(run)`：所有步骤都执行完、所有 assert 通过，才能 passed
 - `validateFinding(f)`：product-defect 必须带 expected / actual / 截图证据；step-defect 必须指明 stepId
 - `planRepair(finding, feedback)`：输出下一轮 Plan 草稿与 rerun 任务；不许复活终态 Run
@@ -108,7 +109,7 @@ Case(draft) ─compile→ Plan(draft) ─人审批→ Plan(approved) ─→ Run(
 ### 4. 组件（`components/`，初始内置）
 
 | 组件 | 形式 | 作用 |
-|---|---|---|
+| --- | --- | --- |
 | `case-to-steps` | Skill | 用例 → Step DSL 的规则、locator 优先级（testId > role > label > text > css）、示例 |
 | `failure-triage` | Skill | 四类 verdict 的判定准则与证据要求 |
 | `component-forge` | Skill | 起草新 skill / MCP 的模板与约束 |
@@ -134,7 +135,7 @@ WS：`/ws`，按 runId 或 caseId 订阅 `frame | step | status | agent-log | fi
 
 ## 目录结构（pnpm workspace）
 
-```
+```text
 Desktop/Projects/ui-test-agent/
 ├─ docs/architecture.md          # 完整架构文档（含 dsh-agent-teams 借鉴对照表）
 ├─ packages/{core,agent,runner,server,web}/

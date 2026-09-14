@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>控件夹具</title></head>
+<body>
+  <label>城市 <select id="city"><option value="bj">北京</option><option value="sh">上海</option></select></label>
+  <p data-testid="city-out"></p>
+
+  <label><input type="checkbox" id="agree"> 同意协议</label>
+  <p data-testid="agree-out">未同意</p>
+
+  <label>附件 <input type="file" id="file"></label>
+  <p data-testid="file-out"></p>
+
+  <label>搜索 <input id="q"></label>
+  <p data-testid="search-out"></p>
+  <p data-testid="key-out"></p>
+
+  <div id="hover" style="padding:8px;background:#eee">悬停我</div>
+  <p data-testid="hover-out"></p>
+
+  <button id="later">稍后显示</button>
+  <p data-testid="later-out"></p>
+
+  <p id="loading">加载中</p>
+
+  <ul data-testid="items"><li>一</li><li>二</li><li>三</li></ul>
+
+  <label>备注 <input id="memo" value="初始值"></label>
+
+  <a href="#done">完成</a>
+
+  <button>重复</button><button>重复</button>
+
+  <script>
+    const $ = (id) => document.getElementById(id)
+    const out = (id, text) => { document.querySelector(`[data-testid="${id}"]`).textContent = text }
+    $('city').addEventListener('change', (e) => out('city-out', `城市=${e.target.value}`))
+    $('agree').addEventListener('change', (e) => out('agree-out', e.target.checked ? '已同意' : '未同意'))
+    $('file').addEventListener('change', (e) => out('file-out', `文件=${e.target.files[0]?.name ?? ''}`))
+    $('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') out('search-out', `已搜索：${e.target.value}`) })
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') out('key-out', '按下了 Escape') })
+    $('hover').addEventListener('mouseenter', () => out('hover-out', '提示内容'))
+    $('later').addEventListener('click', () => setTimeout(() => out('later-out', '延迟出现'), 300))
+    setTimeout(() => $('loading').remove(), 200)
+  </script>
+</body>
+</html>

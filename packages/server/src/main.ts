@@ -1,4 +1,10 @@
-import { startServer } from './server'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { REPO_ROOT, startServer } from './server'
+
+// 本地密钥放在仓库根目录的 .env（已 gitignore）；已存在的环境变量不会被覆盖
+const envFile = join(REPO_ROOT, '.env')
+if (existsSync(envFile)) process.loadEnvFile(envFile)
 
 const server = await startServer()
 const routes = server.llm.describe()

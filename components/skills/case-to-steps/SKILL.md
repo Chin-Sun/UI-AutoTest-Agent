@@ -7,10 +7,11 @@ roles: [compiler, repairer]
 # 用例 → Step DSL
 
 ## 输出
+
 调用 `propose_plan`，参数 `{ steps: Step[], rationale }`。每个 Step：
 
 | 字段 | 说明 |
-|---|---|
+| --- | --- |
 | `id` | `s1`、`s2`……按顺序，修正时保留原 id |
 | `action` | 见下表 |
 | `target` | 只能是以下之一：`{testId}` `{role,name}` `{label}` `{placeholder}` `{text}` `{css}` |
@@ -19,7 +20,7 @@ roles: [compiler, repairer]
 | `caseRef` | 对应原用例第几句（0 起；预期句接在步骤句之后编号） |
 
 | action | 需要 |
-|---|---|
+| --- | --- |
 | goto | value |
 | click / check / uncheck / hover | target |
 | fill / select / upload | target + value |
@@ -31,6 +32,7 @@ roles: [compiler, repairer]
 | assertCount | target + expect（整数） |
 
 ## 规则
+
 1. **locator 优先级**：`testId` > `role+name` > `label` > `placeholder` > `text` > `css`。不要编造 testId；没把握时用 role/label/text。
 2. 按钮、链接用 `{role: "button"|"link", name}`；输入框优先 `{label}`，没有 label 时用 `{placeholder}`。
 3. 用例里的每条「预期」至少对应一个断言步骤，没有断言的计划会被门禁拒绝。
@@ -39,6 +41,7 @@ roles: [compiler, repairer]
 6. 不要加入用例没有要求的步骤（例如额外登录），登录态由项目的 storageState 提供。
 
 ## 示例
+
 用例：打开「login.html」；在「用户名」输入「alice」；点击「登录」按钮；预期：页面显示「欢迎，alice」
 
 ```json

@@ -8,11 +8,16 @@
   },
   "scripts": {
     "start": "tsx server.ts",
+    "test": "node ../../../scripts/run-tests.mjs --project obs-recorder",
     "typecheck": "tsc -p ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "obs-websocket-js": "^5.0.8",
     "zod": "^4.6.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1",
+    "ws": "^8.21.3"
   }
 }

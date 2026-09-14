@@ -46,6 +46,10 @@ button.secondary { background: #e8edff; color: var(--brand); }
 button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
 button.danger { background: #fdeaea; color: var(--bad); }
 .async { display: inline-flex; gap: 8px; align-items: center; }
+/* 外观像链接的按钮：可点击元素必须能被键盘聚焦，不用无 href 的 <a> */
+button.linklike { background: none; border: 0; padding: 0; color: var(--brand); font: inherit; text-align: left; white-space: normal; }
+button.linklike:hover { text-decoration: underline; }
+button.linklike.small { font-size: 12px; }
 input, select, textarea { font: inherit; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; background: #fff; color: var(--ink); min-width: 0; }
 textarea { width: 100%; resize: vertical; }
 .form { display: flex; flex-direction: column; gap: 10px; }
@@ -89,6 +93,29 @@ table.steps tr.selected td { background: #f1f5ff; }
 .sentences li.expect { color: var(--ok); }
 .plan-meta { display: flex; gap: 8px; align-items: center; margin: 6px 0 10px; }
 
+/* Token 用量 */
+.tokens { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tokens.live::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); animation: tokens-pulse 1s ease-in-out infinite; }
+@keyframes tokens-pulse { 50% { opacity: .25; } }
+.llm .tokens { display: flex; color: #8d97ad; white-space: normal; margin-top: 2px; }
+.llm .llm-usage-title { margin-top: 10px; }
+
+/* 流程阶段与数据来源 */
+.pill.stage-setup { background: #eef0f4; color: #4a5366; }
+.pill.stage-action { background: #e6ecff; color: var(--info); }
+.pill.stage-decision, .pill.source-setup { background: #f1e8ff; color: #6b3fc2; }
+.pill.stage-verify, .pill.source-catalog { background: #e2f5e9; color: var(--ok); }
+.pill.stage-cleanup, .pill.source-human { background: #fff3dc; color: var(--warn); }
+.pill.source-generated { background: #e6ecff; color: var(--info); }
+table.steps tr.stage-start td { border-top: 2px solid #cfd5e2; }
+.plan-section { margin-top: 16px; }
+table.data-bindings td input { width: 100%; }
+table.data-bindings tr.missing td { background: #fdf1f1; }
+.decisions { list-style: none; margin: 0; padding: 0; }
+.decisions li { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; cursor: pointer; }
+.decisions li.active { border-color: var(--brand); background: #f1f5ff; }
+.decisions .option-rejected { color: var(--muted); text-decoration: line-through; font-size: 12px; margin-right: 6px; }
+
 .viewer { position: relative; background: #0f1320; border-radius: 8px; aspect-ratio: 16 / 10; overflow: hidden; margin-bottom: 12px; display: flex; align-items: center; justify-content: center; }
 .viewer img, .viewer video { width: 100%; height: 100%; object-fit: contain; }
 .viewer img:not([src]) { visibility: hidden; }
@@ -111,7 +138,7 @@ table.steps tr.selected td { background: #f1f5ff; }
 .evidence { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .evidence img, .evidence video { width: 100%; border-radius: 6px; border: 1px solid var(--line); }
 
-.draft { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
-.draft pre, .answer { background: #f6f7fa; padding: 10px; border-radius: 6px; max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
+.draft-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-bottom: 10px; }
+.draft-card pre, .answer { background: #f6f7fa; padding: 10px; border-radius: 6px; max-height: 240px; overflow: auto; white-space: pre-wrap; font-size: 12px; }
 .modal { position: fixed; inset: 0; background: rgba(10, 14, 25, .7); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 24px; }
 .modal img { max-width: 92vw; max-height: 88vh; border-radius: 8px; }

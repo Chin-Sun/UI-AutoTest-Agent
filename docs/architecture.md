@@ -22,7 +22,7 @@
 ## 一、设计目标
 
 | 编号 | 目标 | 落点 |
-|------|------|------|
+| --- | --- | --- |
 | G1 | Web 平台可视化操作测试，执行过程实时可见 | `packages/runner` 的 CDP screencast + 前端③执行直播；OBS 作为可选 MCP 组件 |
 | G2 | 测试用例固定排列，由组件转成 Playwright 可执行步骤 | `compiler` 角色 + `case-to-steps` Skill，产出 Step DSL，人工批准后才能执行 |
 | G3 | 执行错误进入评测门禁，人补充后纠正用例并重跑 | 四类 verdict 状态机（`packages/core/src/gates.ts`）+ 前端④失败门禁 |
@@ -37,7 +37,7 @@
 
 ### 2.1 整体关系
 
-```
+```text
         用户 ──自然语言/slash 命令──▶ Captain 会话（系统提示注入 usage 协议）
                                           │ 调用 agent_teams_* 工具
             ┌─────────────────────────────┼──────────────────────────────┐
@@ -53,7 +53,7 @@
 ### 2.2 Agent 的使用
 
 | 机制 | 源码位置 | 做法 |
-|------|----------|------|
+| --- | --- | --- |
 | 队长 | `src/index.ts` `usageSectionText()` | 通过 `ctx.systemPrompt.section()` 往全局系统提示注入 10 条协议，模型读到协议就会以队长身份行动 |
 | 成员 | `src/members.ts` `spawnMember` | 每个成员是可续聊的持久子 Agent，带 persona、provider/model/思考强度快照 |
 | 权限 | `src/members.ts` `MEMBER_DENIED_TOOLS` | 成员看不到建队、建任务、删队等队长工具，权限靠工具可见性划分 |
@@ -62,7 +62,7 @@
 ### 2.3 Agent 的链接
 
 | 机制 | 源码位置 | 做法 |
-|------|----------|------|
+| --- | --- | --- |
 | 持久状态 | `src/state.ts` | `<workspace>/.agent-teams/<teamId>/team.json` 是唯一真相源；读写都做 schema 校验，写入为原子写并持有进程内锁 |
 | 邮箱 | `src/state.ts` `appendMailbox` | 每个参与者一个 JSONL 邮箱；无法实时投递时持久化，在下一个状态边界重投 |
 | 调度 | `src/scheduler.ts` | 不轮询：成员 `idle` 边沿或任务图变化时，为空闲成员原子领取一项就绪任务并唤醒 |
@@ -72,7 +72,7 @@
 ### 2.4 Agent 的调用
 
 | 入口 | 做法 |
-|------|------|
+| --- | --- |
 | 工具注册 | `ctx.tools.register(defineTool(...))` 注册 13 个 `agent_teams_*` 工具，模型通过 tool call 驱动团队 |
 | 确定性激活 | `/agent-teams` slash 命令 + 手势边界，避免“模型没意识到要建队” |
 | 两阶段审批 | `approval="required"` 时先生成 staged 计划，人在 Web 点 Approve & Run 才 spawn 成员（`approveStagedTeam`） |
@@ -81,7 +81,7 @@
 ### 2.5 借鉴与取舍
 
 | dsh-agent-teams | 本平台 | 取舍理由 |
-|-----------------|--------|----------|
+| --- | --- | --- |
 | Captain + 成员子 Agent | `orchestrator` + `compiler / triager / repairer / reporter` 角色 | 测试流水线的阶段固定，角色按阶段划分即可，不需要动态建队 |
 | 工具黑名单 | 角色工具白名单 + MCP 按 `roles` 暴露 | 组件会不断叠加，白名单更安全 |
 | 系统提示注入协议 | 系统提示只注入组件目录，正文由 `load_skill` 按需加载 | 组件多了以后避免提示膨胀 |
@@ -96,7 +96,7 @@
 
 ## 三、总体架构
 
-```
+```text
 ┌──────────────────────────── 前端 packages/web（React + Vite）─────────────────────────────┐
 │ ①用例录入  ②步骤编译/审批  ③执行直播  ④失败门禁  ⑤结果审阅/报告  ⑥组件中心              │
 └──────────────▲ REST /api ───────────────────────────▲ WebSocket /ws（帧 / 步骤 / 状态 / 日志）┘
@@ -116,7 +116,7 @@
 ```
 
 | 模块 | 职责 | 关键文件 |
-|------|------|----------|
+| --- | --- | --- |
 | `core` | 领域模型、门禁规则、文件存储，不依赖任何框架 | `types.ts`、`gates.ts`、`store.ts` |
 | `runner` | 按 Step DSL 逐步驱动 Playwright，产出步骤结果与证据 | `runner.ts` |
 | `agent` | LLM 适配、Agent Loop、角色、组件注册表、面向流水线的服务 | `llm/*`、`loop.ts`、`registry.ts`、`services.ts` |
@@ -128,7 +128,7 @@
 
 ### 4.1 状态机
 
-```
+```text
 TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准──▶ StepPlan(approved) ──▶ Run(queued → running)
                                                                                          │
                                Run(passed) ◀─────────────────────────────────────────────┤
@@ -147,7 +147,7 @@ TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准─
 ### 4.2 例子：四条演示用例走一遍
 
 | 用例 | 首轮结果 | 归因 | 人的动作 | 第 2 轮 |
-|------|----------|------|----------|---------|
+| --- | --- | --- | --- | --- |
 | 登录成功后显示欢迎语 | 通过 | — | — | — |
 | 修改昵称并保存 | `s3` 点击「提交」按钮找不到元素 | `step-defect`，建议“页面上现有的 button：「保存」” | 在④写“按钮叫「保存」” | 计划 v2 仅改 locator，自动批准，重跑通过 |
 | 使用 VIP 兑换码兑换会员 | 执行前发现缺 `${data.vipCode}` | `data-missing`（规则判定，不启动浏览器） | 在④填 `vipCode=VIP-2026` | 重跑通过 |
@@ -155,12 +155,41 @@ TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准─
 
 **预期**：报告定稿，`cases=4, passed=3, failed=1, defects=1, open=0`。该流程由 `packages/server/test/e2e.test.ts` 自动验证。
 
+### 4.3 流程与数据：智能编译
+
+清单导入的用例往往只有一句话（例如「02-C5 删除有数据的节点：弹出拦截提示，要求选择数据转移的目标节点后才能删除」）。compiler 按 `case-to-flow` 把它展开成一个**分阶段计划**，并自己决定测试数据从哪来。
+
+```text
+用例一句话 + 清单上下文（文件头 / 章节 / 同章节条目）+ 项目知识 skill
+        │ list_test_data 查项目测试数据目录
+        ▼
+propose_plan { steps[stage], data[], decisions[], rationale }
+        │ validatePlanSteps + validatePlanData（未声明的 ${data.key}、不存在的目录条目、chosen ∉ options 都会被退回）
+        ▼
+StepPlan(draft) ──人审阅阶段 / 数据 / 决策点──▶ approved ──执行时 resolvePlanData──▶ Runner
+```
+
+| 概念 | 取值 | 说明 |
+| --- | --- | --- |
+| `Step.stage` | `setup` → `action` → `decision` → `verify` → `cleanup` | 准备前置数据、执行被测操作、流程中的选择、断言、清理本次造的数据 |
+| `DataBinding.source` | `catalog` | 引用 `projects/<id>/test-data.yaml` 中登记的条目（任务 ID、账号、本地素材） |
+| `DataBinding.source` | `generated` | 模板 `{{case}}` `{{ts}}` `{{rand}}`，每次执行时生成，避免与共享环境冲突 |
+| `DataBinding.source` | `setup` | 由 setup 阶段的步骤在页面上造出来 |
+| `DataBinding.source` | `human` | 以上都做不到时才用；没有值时执行前判为 `data-missing`，走门禁补数据 |
+| `Decision` | `question`、`options`、`chosen`、`reason`、`stepIds` | 用例没写死、由 Agent 做出的选择，②页面可点击高亮关联步骤 |
+
+**数据优先级**：用例数据（人在门禁补的）> 计划声明（目录取值 / 模板展开 / 计划里填的值）。人在草稿里新引用的 `${data.key}` 会自动声明为 `human`。
+
+**审批**：门禁修正只要改动了阶段、数据来源或决策点，就不再自动批准，需要人审阅。
+
+> ⚠️ `mock` 规则引擎不会推断流程：它只把断言归入 `verify`、其余归入 `action`，并把引用的数据声明为 `human`。智能编译需要在 `config/llm.yaml` 把 `compiler` 路由到真实模型。
+
 ## 五、评测门禁
 
 门禁规则全部是 `packages/core/src/gates.ts` 中的纯函数，由状态机强制执行，不依赖 prompt。
 
 | 规则 | 函数 | 说明 |
-|------|------|------|
+| --- | --- | --- |
 | 计划合法 | `validatePlanSteps` | 动作所需字段齐全、id 唯一、至少一个断言；编译与修正的结果都要通过它 |
 | 通过判定 | `canPass` | 所有步骤执行完毕且全部通过；缺步骤、跳过都不算通过 |
 | 缺数据前置 | `missingBindings` | 执行前检查 `${data.*}` 引用，缺失即判 `data-missing` |
@@ -179,7 +208,7 @@ TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准─
 > **类比**：平台像一家餐厅，Agent 是店长。Skill 是菜谱（知识与规则），MCP 是厨具（可执行的能力）。店长按订单挑菜谱和厨具；缺了就写一份采购申请（草稿），老板（人）批准后才进货。
 
 | 组件形式 | 位置 | 适合承载 | 加载方式 |
-|----------|------|----------|----------|
+| --- | --- | --- | --- |
 | Skill | `components/skills/<name>/SKILL.md` | 被测系统知识、控件操作套路、归因准则 | 系统提示只放目录，Agent 调 `load_skill` 读正文 |
 | MCP | `components/mcp.json` 声明的 stdio server | 需要执行代码的能力：浏览器探查、OBS 录制、造数、文件校验 | 启动时连接，工具以 `mcp__<server>__<tool>` 暴露给对应角色 |
 | 草稿 | `components/_drafts/<name>/` | Agent 用 `draft_component` 起草的新组件 | 人在⑥批准后移入正式目录并热加载；MCP 草稿批准后仍需手动启用 |
@@ -187,7 +216,8 @@ TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准─
 **内置组件**：
 
 | 组件 | 形式 | 使用角色 | 作用 |
-|------|------|----------|------|
+| --- | --- | --- | --- |
+| `case-to-flow` | Skill | compiler、repairer | 智能编译方法论：推断意图与前置、按优先级挑选测试数据、生成分阶段流程并记录决策点 |
 | `case-to-steps` | Skill | compiler、repairer | Step DSL 规范、locator 优先级、示例 |
 | `failure-triage` | Skill | triager | 四类 verdict 判定准则与证据要求 |
 | `component-forge` | Skill | orchestrator | 起草新组件的模板与约束 |
@@ -198,11 +228,11 @@ TestCase ──compile（compiler）──▶ StepPlan(draft) ──人批准─
 **角色与工具白名单**（`packages/agent/src/roles.ts`）：
 
 | 角色 | 内置工具 | 终结工具 | 开工前必读 Skill |
-|------|----------|----------|-----------------|
+| --- | --- | --- | --- |
 | `orchestrator` | `list_components`、`load_skill`、`draft_component` | —（以文本结束） | — |
-| `compiler` | `list_components`、`load_skill`、`propose_plan` | `propose_plan` | `case-to-steps` |
+| `compiler` | `list_components`、`load_skill`、`list_test_data`、`propose_plan` | `propose_plan` | `case-to-flow`、`case-to-steps` |
 | `triager` | `load_skill`、`record_verdict` | `record_verdict` | `failure-triage` |
-| `repairer` | `load_skill`、`propose_plan` | `propose_plan` | `case-to-steps` |
+| `repairer` | `load_skill`、`list_test_data`、`propose_plan` | `propose_plan` | `case-to-steps` |
 | `reporter` | — | — | — |
 
 终结工具的输入经过与门禁相同的校验；不合格时以 `is_error` 回传问题清单，模型修正后重新提交。白名单外的工具调用不会被执行。
@@ -230,7 +260,7 @@ roles:
 **预期**：启动日志中出现 `compiler=claude · claude-opus-5  triager=deepseek · deepseek-chat …`，前端侧栏底部显示同样的路由。
 
 | provider 类型 | 说明 |
-|---------------|------|
+| --- | --- |
 | `anthropic` | 官方 `@anthropic-ai/sdk`；默认 `claude-opus-5`，开启服务端拒答回退（`fallbacks: "default"`）；同供应商续聊时原样回传 thinking 块 |
 | `openai-compatible` | OpenAI 协议，覆盖 DeepSeek、通义千问、本地 vLLM/Ollama；`vision: true` 时附带失败截图 |
 | `mock` | 规则引擎，走与真实模型完全相同的 Agent Loop 与组件调用，用于离线演示与自动化测试 |
@@ -238,18 +268,19 @@ roles:
 ## 八、实时可视化
 
 | 通道 | 实现 | 用途 |
-|------|------|------|
+| --- | --- | --- |
 | 前端直播 | CDP `Page.startScreencast` 推 JPEG 帧 → 事件总线 → WebSocket → ③的画面区；WebSocket 缓冲超过 4 MB 时丢帧不丢状态 | 执行时实时观看 |
 | 步骤高亮 | `step start/end` 事件驱动步骤时间线，附每步截图与耗时 | 定位出错的步骤 |
 | 录像与 trace | Playwright `recordVideo` + `tracing`，保存在 `data/evidence/<runId>/` | 回放与归档；`npx playwright show-trace` 逐步查看 DOM 快照 |
 | 有头浏览器 | ③勾选“同时打开有头浏览器”，使用项目配置的 `slowMo` | 现场演示 |
 | OBS 录制 | `obs-recorder` MCP：执行前 `start_record`，结束后 `stop_record` | 产出正式演示视频，需要 OBS 30+ 并开启 WebSocket 服务 |
+| Token 用量 | Agent Loop 每轮把适配器返回的 `usage` 放进 `llm` 事件；每次运行结束落盘 `data/usage/` 并发 `usage` 事件；前端 `TokenUsage` = 落盘累计 + 进行中实时累加；`GET /api/usage?projectId=&scope=` | 编译、归因、修正、报告、问 Agent 旁显示用量，侧栏显示项目累计；mock 只计调用次数 |
 
 ## 九、数据模型与存储
 
 所有对象都以 zod schema 定义（`packages/core/src/types.ts`），在 `data/` 下一对象一文件，写入为原子写（临时文件 + rename）并持有进程内锁。
 
-```
+```text
 data/
 ├── cases/<id>.json        # TestCase：自然语言步骤、预期、测试数据 data{}、版本
 ├── plans/<id>.json        # StepPlan：Step DSL、状态 draft|approved|superseded|discarded、derivedFrom 修正链
@@ -259,6 +290,7 @@ data/
 ├── reports/<id>.json      # Report 元数据；HTML 在 report-html/
 ├── evidence/<runId>/      # 每步截图、video.webm、trace.zip
 ├── transcripts/           # 每次 Agent 运行的完整过程（LLM 回复与工具调用）
+├── usage/<id>.json        # UsageRecord：每次 Agent 运行的 scope、角色、模型、项目、输入/输出 token、调用次数
 └── uploads/               # 人在门禁里上传的测试文件
 ```
 
@@ -267,9 +299,9 @@ data/
 ## 十、前端交互
 
 | 页面 | 人做什么 | 看什么算成功 |
-|------|----------|--------------|
+| --- | --- | --- |
 | ① 用例录入 | 填写或编辑用例；对 molardata 从功能点清单勾选导入 | 列表出现用例，版本号随编辑递增 |
-| ② 步骤编译 | 点“编译”，在表格里改草稿，点“批准” | 计划状态变为“已批准”；Agent 过程面板显示 `load_skill`、`propose_plan` 调用 |
+| ② 步骤编译 | 点“编译”，审阅阶段、测试数据与决策点，在表格里改草稿或补数据，点“批准” | 计划状态变为“已批准”；Agent 过程面板显示 `load_skill`、`list_test_data`、`propose_plan` 调用 |
 | ③ 执行直播 | 勾选用例与选项，点“执行所选” | 画面实时变化，步骤逐个变为 ✓；结束后可播放录像 |
 | ④ 失败门禁 | 对步骤错误写指点或直接改步骤；对缺数据填值或上传文件 | Finding 依次变为“修正中 → 重跑中 → 已解决” |
 | ⑤ 结果审阅 | 对疑似缺陷“确认”或“不是缺陷并写明正确预期”；生成报告 | 报告状态为“定稿”，缺陷卡片附预期、实际、截图 |
@@ -282,18 +314,20 @@ data/
 一个被测项目 = `projects/<id>/project.yaml`，支持 `${VAR}` 与 `${VAR:-默认值}`。
 
 | 字段 | 说明 |
-|------|------|
+| --- | --- |
 | `baseURL` | 被测站点地址，`goto` 使用相对路径 |
 | `authRoles` | 角色 → Playwright storageState 路径；计划的 `authRole` 决定用哪个登录态 |
 | `knowledgeSkills` | 编译时要求 Agent 加载的领域知识 Skill |
-| `importers.checklistDir` | 功能点清单目录，启用①的清单导入 |
+| `importers.checklistDir` | 功能点清单目录，启用①的清单导入；编译时把条目所在的文件头、章节与同章节条目交给 compiler |
+| `envFile` | 额外的 `.env`，只用于展开本文件与 `test-data.yaml` 中的 `${VAR}`；非空的环境变量优先 |
+| `test-data.yaml`（同目录） | 测试数据目录 `entries: [{ key, description, value, tags }]`；只有登记的条目会交给模型，`tags` 含 `path` 的值按仓库根解析 |
 
 **molardata 接入**（`projects/molardata/project.yaml`）：
 
 1. 在 `molardata-e2e` 执行 `npm run auth:all`，生成 `auth/*.json`；本平台直接引用，不复制凭据。
-2. 设置 `MOLAR_BASE_URL`（以及目录不在默认位置时的 `MOLAR_AUTOTEST_DIR`）。
+2. 设置 `MOLAR_BASE_URL`（以及目录不在默认位置时的 `MOLAR_AUTOTEST_DIR`）。`TASK_ID_*` 从 `molardata-e2e/.env` 读取，展开到 `test-data.yaml` 的任务条目。
 3. 在①选择“MolarData 标注平台”，从 `testcases/0N-*.md` 勾选条目导入，`source` 记为 `molardata:02-A1`，与 molardata ledger 主键一致。
-4. 清单条目是功能点而非详细步骤，需要配置真实 LLM；`mock` 规则引擎只理解用「」标注的规范句式。
+4. 清单条目是功能点而非详细步骤，`config/llm.yaml` 已把 `compiler`、`repairer` 路由到 OpenAI 兼容的 `ppapi` provider，密钥写在仓库根目录的 `.env`（`PPAPI_API_KEY=…`，已 gitignore，服务启动时自动加载）；`mock` 规则引擎只理解用「」标注的规范句式。
 
 > ⚠️ 登录态文件缺失时，执行直接判为 `data-missing`，建议文案会提示先生成 storageState。
 
@@ -302,7 +336,7 @@ data/
 以下能力都以组件形式叠加，不需要改动核心：
 
 | 需求 | 建议组件 | 形式 |
-|------|----------|------|
+| --- | --- | --- |
 | Canvas / WebGL 标注工具 | `canvas-state`：调用页面暴露的 Canvas State Hook 断言 | MCP + Skill |
 | 视觉回归 | `visual-diff`：截图基线比对 | MCP |
 | 造数与清理 | `molar-api`：调用平台 API 创建任务、导入数据 | MCP |

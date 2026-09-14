@@ -8,8 +8,8 @@ import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { z } from 'zod'
 import {
-  FeedbackSchema, FindingSchema, ReportSchema, RunSchema, StepPlanSchema, TestCaseSchema,
-  type Feedback, type Finding, type Report, type Run, type StepPlan, type TestCase,
+  FeedbackSchema, FindingSchema, ReportSchema, RunSchema, StepPlanSchema, TestCaseSchema, UsageRecordSchema,
+  type Feedback, type Finding, type Report, type Run, type StepPlan, type TestCase, type UsageRecord,
 } from './types'
 import { assertAttempt } from './gates'
 
@@ -107,15 +107,16 @@ export class Collection<T extends { id: string }> {
 export class NotFoundError extends Error {}
 
 export function createStore(root: string) {
-  const runs = new Collection<Run>(join(root, 'runs'), RunSchema as z.ZodType<Run>)
+  const runs = new Collection<Run>(join(root, 'runs'), RunSchema)
   return {
     root,
-    cases: new Collection<TestCase>(join(root, 'cases'), TestCaseSchema as z.ZodType<TestCase>),
-    plans: new Collection<StepPlan>(join(root, 'plans'), StepPlanSchema as z.ZodType<StepPlan>),
+    cases: new Collection<TestCase>(join(root, 'cases'), TestCaseSchema),
+    plans: new Collection<StepPlan>(join(root, 'plans'), StepPlanSchema),
     runs,
-    findings: new Collection<Finding>(join(root, 'findings'), FindingSchema as z.ZodType<Finding>),
-    feedback: new Collection<Feedback>(join(root, 'feedback'), FeedbackSchema as z.ZodType<Feedback>),
-    reports: new Collection<Report>(join(root, 'reports'), ReportSchema as z.ZodType<Report>),
+    findings: new Collection<Finding>(join(root, 'findings'), FindingSchema),
+    feedback: new Collection<Feedback>(join(root, 'feedback'), FeedbackSchema),
+    reports: new Collection<Report>(join(root, 'reports'), ReportSchema),
+    usage: new Collection<UsageRecord>(join(root, 'usage'), UsageRecordSchema),
     /** 执行者写 run：必须持有当前 attemptId，否则拒绝（迟到结果不能覆盖新 attempt） */
     updateRunAttempt(runId: string, attemptId: string, fn: (run: Run) => Run | void): Promise<Run> {
       return runs.update(runId, (run) => {

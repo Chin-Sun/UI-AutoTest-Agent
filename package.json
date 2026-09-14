@@ -10,14 +10,30 @@
     "dev": "pnpm --parallel --filter @uta/server --filter @uta/web dev",
     "build": "pnpm --filter @uta/web build",
     "start": "pnpm build && pnpm --filter @uta/server start",
-    "test": "pnpm -r --workspace-concurrency=1 test",
+    "test": "node scripts/run-tests.mjs",
+    "test:unit": "node scripts/run-tests.mjs --project core --project agent --project server --project runner --project web --project obs-recorder",
+    "test:e2e": "node scripts/run-tests.mjs --project e2e",
+    "test:coverage": "node scripts/run-tests.mjs --coverage --project core --project agent --project server --project runner --project web --project obs-recorder",
+    "test:watch": "vitest",
     "typecheck": "pnpm -r typecheck",
+    "lint": "eslint . && markdownlint-cli2",
+    "lint:fix": "eslint . --fix && markdownlint-cli2 --fix",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
     "playwright:install": "pnpm --filter @uta/runner exec playwright install chromium"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@stylistic/eslint-plugin": "^5.10.0",
     "@types/node": "^22.20.2",
+    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/eslint-plugin": "^1.6.27",
+    "eslint": "^10.10.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "markdownlint-cli2": "^0.23.2",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"
   }
 }

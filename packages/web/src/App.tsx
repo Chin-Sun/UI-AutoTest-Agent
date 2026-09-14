@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, useReload, type Finding, type Project } from './api'
+import { TokenUsage } from './components'
 import { CasesPage } from './pages/Cases'
 import { PlansPage } from './pages/Plans'
 import { RunPage } from './pages/Run'
@@ -10,7 +11,7 @@ import { ComponentsPage } from './pages/Components'
 export type PageId = 'cases' | 'plans' | 'run' | 'gate' | 'review' | 'components'
 export type Go = (page: PageId, param?: string) => void
 
-const NAV: { id: PageId; label: string; hint: string }[] = [
+const NAV: { id: PageId, label: string, hint: string }[] = [
   { id: 'cases', label: '① 用例录入', hint: '录入 / 导入测试用例' },
   { id: 'plans', label: '② 步骤编译', hint: '用例 → Playwright 步骤，人工审批' },
   { id: 'run', label: '③ 执行直播', hint: '执行并实时观看' },
@@ -19,7 +20,7 @@ const NAV: { id: PageId; label: string; hint: string }[] = [
   { id: 'components', label: '⑥ 组件中心', hint: 'Skill / MCP / Agent' },
 ]
 
-function parseHash(): { page: PageId; param?: string } {
+function parseHash(): { page: PageId, param?: string } {
   const [page, param] = location.hash.replace(/^#\/?/, '').split('/')
   return { page: NAV.some((item) => item.id === page) ? page as PageId : 'cases', ...(param ? { param: decodeURIComponent(param) } : {}) }
 }
@@ -40,11 +41,15 @@ export function App() {
     void api<Project[]>('/api/projects').then(setProjects)
     void api<{ llm: Record<string, string> }>('/api/health').then((health) => setLlm(health.llm))
   }, [])
-  const loadFindings = useCallback(() => { void api<Finding[]>(`/api/findings?projectId=${projectId}`).then(setFindings) }, [projectId])
+  const loadFindings = useCallback(() => {
+    void api<Finding[]>(`/api/findings?projectId=${projectId}`).then(setFindings)
+  }, [projectId])
   useEffect(loadFindings, [loadFindings])
   useReload(['finding'], loadFindings)
 
-  const go: Go = (page, param) => { location.hash = `#/${page}${param ? `/${encodeURIComponent(param)}` : ''}` }
+  const go: Go = (page, param) => {
+    location.hash = `#/${page}${param ? `/${encodeURIComponent(param)}` : ''}`
+  }
   const selectProject = (id: string) => {
     localStorage.setItem('uta.project', id)
     setProjectId(id)
@@ -73,11 +78,14 @@ export function App() {
         <div className="llm" title="config/llm.yaml">
           <b>LLM</b>
           {Object.entries(llm).map(([role, provider]) => <div key={role}><span>{role}</span>{provider}</div>)}
+          <b className="llm-usage-title">Token 累计</b>
+          <TokenUsage key={projectId} scopes={[]} projectId={projectId} label="本项目" />
+          <TokenUsage scopes={['ask']} label="问 Agent" />
         </div>
       </aside>
       <main key={projectId}>
         {page === 'cases' && <CasesPage projectId={projectId} project={projects.find((p) => p.id === projectId)} go={go} />}
-        {page === 'plans' && <PlansPage projectId={projectId} caseId={route.param} go={go} />}
+        {page === 'plans' && <PlansPage key={route.param ?? 'none'} projectId={projectId} caseId={route.param} go={go} />}
         {page === 'run' && <RunPage projectId={projectId} runId={route.param} go={go} />}
         {page === 'gate' && <GatePage projectId={projectId} findings={findings} go={go} />}
         {page === 'review' && <ReviewPage projectId={projectId} findings={findings} go={go} />}

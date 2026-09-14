@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - components/mcp/*
+  - tests
 
 allowBuilds:
   esbuild: true

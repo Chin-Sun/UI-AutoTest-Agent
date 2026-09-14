@@ -61,7 +61,9 @@ ${report.blockers.length === 0 ? '' : `<h2>定稿阻塞项</h2><ul>${report.bloc
 <table><thead><tr><th>用例</th><th>模块</th><th>计划</th><th>轮次</th><th>结果</th></tr></thead><tbody>
 ${rows.map(({ testCase, run, plan }) => `<tr><td>${escape(testCase.title)}</td><td>${escape(testCase.module)}</td><td>${plan === undefined ? '—' : `v${plan.version}`}</td><td>${run?.round ?? '—'}</td><td>${run === undefined ? '未执行' : STATUS[run.status]}</td></tr>`).join('')}
 </tbody></table>
-${open.length === 0 ? '' : `<h2>待处理门禁</h2><table><thead><tr><th>用例</th><th>类型</th><th>状态</th><th>说明</th></tr></thead><tbody>
+${open.length === 0
+  ? ''
+  : `<h2>待处理门禁</h2><table><thead><tr><th>用例</th><th>类型</th><th>状态</th><th>说明</th></tr></thead><tbody>
 ${open.map((finding) => `<tr><td>${escape(rows.find((row) => row.testCase.id === finding.caseId)?.testCase.title)}</td><td>${finding.verdict}</td><td>${FINDING[finding.status]}</td><td>${escape(finding.summary)}</td></tr>`).join('')}
 </tbody></table>`}
 </main></body></html>`

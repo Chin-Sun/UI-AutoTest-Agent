@@ -13,10 +13,15 @@ export interface AgentTool {
   terminal?: boolean
 }
 
-export type AgentEvent =
-  | { type: 'llm'; text: string; toolCalls: { name: string; input: unknown }[]; model: string }
-  | { type: 'tool'; name: string; input: unknown; output: string; isError: boolean }
-  | { type: 'error'; message: string }
+export interface TokenCount {
+  input: number
+  output: number
+}
+
+export type AgentEvent
+  = | { type: 'llm', text: string, toolCalls: { name: string, input: unknown }[], model: string, usage?: TokenCount }
+    | { type: 'tool', name: string, input: unknown, output: string, isError: boolean }
+    | { type: 'error', message: string }
 
 export interface AgentRunOptions {
   role: string
@@ -31,9 +36,11 @@ export interface AgentRunOptions {
 
 export interface AgentRunResult {
   text: string
-  terminal?: { name: string; input: Record<string, unknown> }
+  terminal?: { name: string, input: Record<string, unknown> }
   transcript: AgentEvent[]
   model: string
+  /** 本次运行累计：适配器未返回用量的轮次按 0 计，calls 仍 +1 */
+  usage: TokenCount & { calls: number }
 }
 
 export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult> {
@@ -47,11 +54,21 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
   const model = `${options.llm.provider}/${options.llm.model}`
   let text = ''
   let terminal: AgentRunResult['terminal']
+  const usage = { input: 0, output: 0, calls: 0 }
 
   for (let turn = 0; turn < (options.maxTurns ?? 10); turn += 1) {
     const response = await options.llm.chat({ role: options.role, system: options.system, messages, tools: options.tools.map((tool) => tool.spec) })
     messages.push({ role: 'assistant', content: response.text, toolCalls: response.toolCalls, raw: response.raw, provider: options.llm.provider })
-    emit({ type: 'llm', text: response.text, toolCalls: response.toolCalls.map((item) => ({ name: item.name, input: item.input })), model })
+    usage.calls += 1
+    usage.input += response.usage?.input ?? 0
+    usage.output += response.usage?.output ?? 0
+    emit({
+      type: 'llm',
+      text: response.text,
+      toolCalls: response.toolCalls.map((item) => ({ name: item.name, input: item.input })),
+      model,
+      ...(response.usage === undefined ? {} : { usage: response.usage }),
+    })
     if (response.text !== '') text = response.text
     if (response.stop === 'refusal') {
       emit({ type: 'error', message: '模型拒绝了该请求' })
@@ -59,7 +76,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     }
     if (response.toolCalls.length === 0) break
 
-    const results: { toolCallId: string; content: string; isError: boolean }[] = []
+    const results: { toolCallId: string, content: string, isError: boolean }[] = []
     for (const toolCall of response.toolCalls) {
       const tool = tools.get(toolCall.name)
       let output: string
@@ -83,5 +100,5 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     messages.push({ role: 'tool', results })
     if (terminal !== undefined) break
   }
-  return { text, ...(terminal === undefined ? {} : { terminal }), transcript, model }
+  return { text, ...(terminal === undefined ? {} : { terminal }), transcript, model, usage }
 }

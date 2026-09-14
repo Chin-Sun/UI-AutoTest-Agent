@@ -18,17 +18,17 @@ export interface ImageInput {
   base64: string
 }
 
-export type ChatMessage =
-  | { role: 'user'; content: string; images?: ImageInput[] }
-  | {
-    role: 'assistant'
-    content: string
-    toolCalls?: ToolCall[]
-    /** 供应商原始内容（例如 Anthropic 的 thinking 块），同供应商续聊时原样回传 */
-    raw?: unknown
-    provider?: string
-  }
-  | { role: 'tool'; results: { toolCallId: string; content: string; isError?: boolean }[] }
+export type ChatMessage
+  = | { role: 'user', content: string, images?: ImageInput[] }
+    | {
+      role: 'assistant'
+      content: string
+      toolCalls?: ToolCall[]
+      /** 供应商原始内容（例如 Anthropic 的 thinking 块），同供应商续聊时原样回传 */
+      raw?: unknown
+      provider?: string
+    }
+    | { role: 'tool', results: { toolCallId: string, content: string, isError?: boolean }[] }
 
 export interface ChatRequest {
   /** 当前角色，mock 适配器据此选择规则 */
@@ -43,7 +43,7 @@ export interface ChatResponse {
   toolCalls: ToolCall[]
   stop: 'end' | 'tool_use' | 'max_tokens' | 'refusal'
   raw?: unknown
-  usage?: { input: number; output: number }
+  usage?: { input: number, output: number }
 }
 
 export interface LlmAdapter {

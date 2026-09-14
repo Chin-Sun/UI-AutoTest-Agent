@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { z, ZodError } from 'zod'
-import { GateError, NotFoundError, newId, type Project, type Store } from '@uta/core'
+import { GateError, NotFoundError, newId, sumUsage, type Project, type Store } from '@uta/core'
 import { AgentFailure, type AgentServices, type ComponentRegistry } from '@uta/agent'
 import type { Bus } from './bus'
 import { listChecklists, readChecklist } from './importers'
@@ -13,6 +13,7 @@ import { CaseInputSchema, FeedbackInputSchema, type Pipeline } from './pipeline'
 
 export interface AppContext {
   repoRoot: string
+  projectsDir: string
   dataRoot: string
   webDist: string
   store: Store
@@ -32,17 +33,21 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
   const app = Fastify({ bodyLimit: 60 * 1024 * 1024 })
 
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
-    const status = error instanceof GateError ? 409
-      : error instanceof NotFoundError ? 404
-        : error instanceof ZodError ? 400
-          : error instanceof AgentFailure ? 422
+    const status = error instanceof GateError
+      ? 409
+      : error instanceof NotFoundError
+        ? 404
+        : error instanceof ZodError
+          ? 400
+          : error instanceof AgentFailure
+            ? 422
             : error.statusCode ?? 500
     void reply.status(status).send({ error: error instanceof ZodError ? z.prettifyError(error) : error.message })
   })
 
   await app.register(websocket)
   await mkdir(ctx.dataRoot, { recursive: true })
-  await app.register(fastifyStatic, { root: join(ctx.repoRoot, 'projects/demo/site'), prefix: '/demo/', index: ['login.html'] })
+  await app.register(fastifyStatic, { root: join(ctx.projectsDir, 'demo/site'), prefix: '/demo/', index: ['login.html'] })
   await app.register(fastifyStatic, { root: ctx.dataRoot, prefix: '/files/', decorateReply: false })
   if (existsSync(ctx.webDist)) await app.register(fastifyStatic, { root: ctx.webDist, prefix: '/', decorateReply: false })
 
@@ -80,7 +85,10 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
 
   // ---------- 计划 ----------
   app.get('/api/plans/:id', async (request) => store.plans.require((request.params as Params)['id']!))
-  app.put('/api/plans/:id', async (request) => pipeline.savePlanDraft((request.params as Params)['id']!, (request.body as { steps?: unknown }).steps))
+  app.put('/api/plans/:id', async (request) => {
+    const body = (request.body ?? {}) as { steps?: unknown, data?: unknown, decisions?: unknown }
+    return pipeline.savePlanDraft((request.params as Params)['id']!, body.steps, { data: body.data, decisions: body.decisions })
+  })
   app.post('/api/plans/:id/approve', async (request) => pipeline.approvePlan((request.params as Params)['id']!))
   app.post('/api/plans/:id/discard', async (request) => pipeline.discardPlan((request.params as Params)['id']!))
 
@@ -117,6 +125,16 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     return byNewest(await store.reports.list((report) => projectId === undefined || report.projectId === projectId))
   })
   app.post('/api/reports', async (request) => pipeline.report(z.object({ projectId: z.string() }).parse(request.body).projectId))
+
+  // ---------- Token 用量 ----------
+  // scope 可传多个前缀（逗号分隔）；total 为全部匹配记录的累计，records 为最近 200 条
+  app.get('/api/usage', async (request) => {
+    const { projectId, scope } = request.query as Query
+    const prefixes = (scope ?? '').split(',').filter((prefix) => prefix !== '')
+    const records = byNewest(await store.usage.list((record) => (projectId === undefined || record.projectId === projectId)
+      && (prefixes.length === 0 || prefixes.some((prefix) => record.scope.startsWith(prefix)))))
+    return { total: sumUsage(records), records: records.slice(0, 200) }
+  })
 
   // ---------- 组件 / Agent ----------
   app.get('/api/components', async () => ({ ...registry.describe(), drafts: await registry.listDrafts() }))

@@ -5,8 +5,8 @@
  * 状态转换，而不是只写进 prompt；终态只读，修正生成新版本而不是复活旧对象。
  */
 import type {
-  Feedback, FeedbackKind, Finding, FindingStatus, GatePolicy, Run, RunStatus, Step, StepPlan,
-  StepResult, Verdict,
+  DataBinding, Feedback, FeedbackKind, Finding, FindingStatus, GatePolicy, Run, RunStatus, Step, StepPlan,
+  StepResult, TestDataEntry, Verdict,
 } from './types'
 
 // ---------- Run 状态机 + attempt 令牌 ----------
@@ -114,10 +114,105 @@ export function resolveBindings(text: string, data: Readonly<Record<string, stri
   })
 }
 
+// ---------- 流程数据与决策点 ----------
+
+export interface PlanDataContext {
+  /** 用例上已有的数据 key（人在门禁补充的） */
+  caseDataKeys: readonly string[]
+  /** 项目测试数据目录的条目 key */
+  catalogKeys: readonly string[]
+}
+
+/** 计划的数据声明与决策点是否自洽；步骤引用的每个 ${data.key} 都必须有来源 */
+export function validatePlanData(plan: Pick<StepPlan, 'steps' | 'data' | 'decisions'>, context: PlanDataContext): string[] {
+  const problems: string[] = []
+  const declared = new Set<string>()
+  for (const binding of plan.data) {
+    if (declared.has(binding.key)) problems.push(`数据 key 重复: ${binding.key}`)
+    declared.add(binding.key)
+    const ref = binding.ref ?? binding.key
+    if (binding.source === 'catalog' && !context.catalogKeys.includes(ref)) {
+      problems.push(`数据 ${binding.key}: 测试数据目录中没有条目 ${ref}，请先用 list_test_data 查看可用条目`)
+    }
+    if ((binding.source === 'generated' || binding.source === 'setup') && (binding.value === undefined || binding.value === '')) {
+      problems.push(`数据 ${binding.key}: ${binding.source} 来源需要 value（取值或模板）`)
+    }
+  }
+  const known = new Set([...declared, ...context.caseDataKeys])
+  const undeclared = new Set<string>()
+  for (const step of plan.steps) {
+    for (const text of stepStrings(step)) {
+      for (const key of bindingKeys(text)) if (!known.has(key)) undeclared.add(key)
+    }
+  }
+  for (const key of undeclared) problems.push(`步骤引用了未声明的数据 \${data.${key}}，请在 data 中声明它的来源`)
+  const stepIds = new Set(plan.steps.map((step) => step.id))
+  const decisionIds = new Set<string>()
+  for (const decision of plan.decisions) {
+    if (decisionIds.has(decision.id)) problems.push(`决策点 id 重复: ${decision.id}`)
+    decisionIds.add(decision.id)
+    if (!decision.options.includes(decision.chosen)) problems.push(`决策点 ${decision.id}: chosen「${decision.chosen}」不在 options 中`)
+    for (const id of decision.stepIds) if (!stepIds.has(id)) problems.push(`决策点 ${decision.id}: 引用了不存在的步骤 ${id}`)
+  }
+  return problems
+}
+
+/**
+ * 步骤引用了但没有来源的 key 补声明为 human（人手改的步骤、规则引擎的输出走这里），
+ * 执行前由门禁请人补充
+ */
+export function declareMissingBindings(steps: readonly Step[], data: readonly DataBinding[], caseDataKeys: readonly string[]): DataBinding[] {
+  const known = new Set([...data.map((binding) => binding.key), ...caseDataKeys])
+  const added: DataBinding[] = []
+  for (const step of steps) {
+    for (const text of stepStrings(step)) {
+      for (const key of bindingKeys(text)) {
+        if (known.has(key)) continue
+        known.add(key)
+        added.push({ key, source: 'human', reason: '步骤引用了该数据，但没有声明来源' })
+      }
+    }
+  }
+  return [...data, ...added]
+}
+
+export interface ResolveDataContext {
+  catalog: readonly Pick<TestDataEntry, 'key' | 'value'>[]
+  /** 模板 {{case}} 的取值，如 02-C5 */
+  caseKey: string
+  now: number
+  random?: () => string
+}
+
+/** 展开生成模板：{{case}} 用例键、{{ts}} 时间戳（base36）、{{rand}} 4 位随机串 */
+export function expandTemplate(template: string, context: Pick<ResolveDataContext, 'caseKey' | 'now' | 'random'>): string {
+  const random = context.random ?? (() => Math.random().toString(36).slice(2, 6))
+  return template
+    .replace(/\{\{case\}\}/g, context.caseKey)
+    .replace(/\{\{ts\}\}/g, context.now.toString(36))
+    .replace(/\{\{rand\}\}/g, () => random())
+}
+
+/**
+ * 一次执行实际使用的数据：计划声明（目录取值、模板展开）在下，用例数据（人补的）在上。
+ * human 来源且人还没补的 key 不出现在结果里，执行前由 missingBindings 判为 data-missing。
+ */
+export function resolvePlanData(bindings: readonly DataBinding[], caseData: Readonly<Record<string, string>>, context: ResolveDataContext): Record<string, string> {
+  const data: Record<string, string> = {}
+  for (const binding of bindings) {
+    const value = binding.source === 'catalog'
+      ? context.catalog.find((entry) => entry.key === (binding.ref ?? binding.key))?.value
+      : binding.value === undefined ? undefined : expandTemplate(binding.value, context)
+    if (value !== undefined && value !== '') data[binding.key] = value
+  }
+  for (const [key, value] of Object.entries(caseData)) if (value !== '') data[key] = value
+  return data
+}
+
 // ---------- 通过判定 ----------
 
 /** 所有步骤都执行完毕且全部通过才算 passed；缺步骤、跳过、失败都不行 */
-export function canPass(plan: Pick<StepPlan, 'steps'>, results: readonly StepResult[]): { ok: boolean; reasons: string[] } {
+export function canPass(plan: Pick<StepPlan, 'steps'>, results: readonly StepResult[]): { ok: boolean, reasons: string[] } {
   const reasons: string[] = []
   const byId = new Map(results.map((result) => [result.stepId, result]))
   for (const step of plan.steps) {
@@ -134,7 +229,7 @@ export function canPass(plan: Pick<StepPlan, 'steps'>, results: readonly StepRes
  * 规则归因：LLM 不可用时的确定性基线，也是 mock 模式的 triager。
  * 真实 triager 可以推翻它，但必须通过 validateFinding。
  */
-export function heuristicVerdict(step: Step | undefined, result: StepResult | undefined): { verdict: Verdict; reason: string } {
+export function heuristicVerdict(step: Step | undefined, result: StepResult | undefined): { verdict: Verdict, reason: string } {
   const kind = result?.error?.kind ?? 'other'
   const message = result?.error?.message ?? ''
   if (kind === 'missing-data') return { verdict: 'data-missing', reason: message || '缺少测试数据' }
@@ -225,14 +320,21 @@ export function applyFeedback(finding: Pick<Finding, 'status' | 'verdict'>, feed
 
 /**
  * 修正后的 Plan 是否需要人再审批：只改 target/value/timeout 的小修自动批准；
- * 增删步骤、改动作或改期望（expect）都要人看过。
+ * 增删步骤、改动作、改阶段或改期望（expect）都要人看过。
  */
 export function needsHumanApproval(oldSteps: readonly Step[], newSteps: readonly Step[]): boolean {
   if (oldSteps.length !== newSteps.length) return true
   return oldSteps.some((old, index) => {
     const next = newSteps[index]!
-    return old.id !== next.id || old.action !== next.action || (old.expect ?? '') !== (next.expect ?? '')
+    return old.id !== next.id || old.action !== next.action || (old.expect ?? '') !== (next.expect ?? '') || (old.stage ?? '') !== (next.stage ?? '')
   })
+}
+
+/** 计划级：步骤之外，数据来源或决策点有变化也要人审批 */
+export function planNeedsHumanApproval(old: Pick<StepPlan, 'steps' | 'data' | 'decisions'>, next: Pick<StepPlan, 'steps' | 'data' | 'decisions'>): boolean {
+  return needsHumanApproval(old.steps, next.steps)
+    || JSON.stringify(old.data) !== JSON.stringify(next.data)
+    || JSON.stringify(old.decisions) !== JSON.stringify(next.decisions)
 }
 
 export function applyStepPatches(steps: readonly Step[], patches: Feedback['stepPatches']): Step[] {
@@ -258,7 +360,7 @@ export function shouldAutoRetryFlaky(previousFlakyForPlan: number, policy: GateP
 
 // ---------- 报告发布 ----------
 
-export function canPublishReport(findings: readonly Pick<Finding, 'id' | 'status' | 'verdict'>[]): { ok: boolean; blockers: string[] } {
+export function canPublishReport(findings: readonly Pick<Finding, 'id' | 'status' | 'verdict'>[]): { ok: boolean, blockers: string[] } {
   const blockers: string[] = []
   for (const finding of findings) {
     if (finding.status === 'awaiting_review') blockers.push(`${finding.id}: 疑似缺陷尚未审阅`)

@@ -23,7 +23,11 @@ export const PLAN_STATUS_LABEL: Record<string, string> = {
   draft: '草稿', approved: '已批准', superseded: '已替代', discarded: '已丢弃',
 }
 
-export const TRIGGER_LABEL: Record<string, string> = { manual: '手动', 'gate-rerun': '门禁重跑', 'flaky-retry': '抖动重试' }
+export const TRIGGER_LABEL: Record<string, string> = { 'manual': '手动', 'gate-rerun': '门禁重跑', 'flaky-retry': '抖动重试' }
+
+export const STAGE_LABEL: Record<string, string> = { setup: '准备', action: '操作', decision: '决策', verify: '验证', cleanup: '清理' }
+
+export const DATA_SOURCE_LABEL: Record<string, string> = { catalog: '数据目录', generated: '自动生成', setup: '流程内造数', human: '待人补充' }
 
 export function targetLabel(target: Target | undefined): string {
   if (target === undefined) return ''

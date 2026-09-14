@@ -15,6 +15,13 @@ providers:
     # 服务端拒答回退：fallbacks: "default"（beta server-side-fallback-2026-07-01）
     refusalFallback: true
 
+  # OpenAI 兼容中转（chat/completions + function tools 已验证可用）；密钥放在仓库根目录的 .env
+  ppapi:
+    type: openai-compatible
+    baseURL: https://app.ppapi.us/v1
+    model: gpt-5.5
+    apiKeyEnv: PPAPI_API_KEY
+
   deepseek:
     type: openai-compatible
     baseURL: https://api.deepseek.com
@@ -27,8 +34,9 @@ providers:
     model: qwen-plus
     apiKeyEnv: DASHSCOPE_API_KEY
 
-roles: {}
-#  compiler: claude
+# 编译与修正需要真实模型：规则引擎只认「」标注的规范句式，无法推断流程、挑选测试数据
+roles:
+  compiler: ppapi
+  repairer: ppapi
 #  triager: deepseek
-#  repairer: claude
 #  orchestrator: claude

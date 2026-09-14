@@ -12,6 +12,8 @@ defaultAuthRole: admin
 slowMo: 300
 viewport: { width: 1600, height: 900 }
 knowledgeSkills: [molar-platform]
+# 读取 molardata-e2e 的 .env（TASK_ID_* 等），只用于展开本文件与 test-data.yaml 里的 ${VAR}
+envFile: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/.env
 importers:
   # 功能点清单（testcases/0N-*.md，条目形如「- [ ] **A1** ……」）
   checklistDir: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/testcases

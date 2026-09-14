@@ -10,7 +10,7 @@
     "dev": "tsx watch --clear-screen=false src/main.ts",
     "start": "tsx src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "node ../../scripts/run-tests.mjs --project server"
   },
   "dependencies": {
     "@fastify/static": "^10.1.3",

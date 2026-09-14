@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, useReload, type Project, type StepPlan, type TestCase } from '../api'
 import { AsyncButton, ErrorLine, Pill } from '../components'
+import { formatDataLines, lines, parseDataLines } from '../format'
 import { PLAN_STATUS_LABEL } from '../labels'
 import type { Go } from '../App'
 
@@ -16,49 +17,60 @@ interface Draft {
 }
 
 const EMPTY: Draft = { title: '', module: '', preconditions: '', steps: '', expected: '', data: '', notes: '' }
-const lines = (text: string) => text.split('\n').map((line) => line.trim()).filter(Boolean)
 
 function toDraft(testCase: TestCase): Draft {
   return {
     id: testCase.id, title: testCase.title, module: testCase.module ?? '', preconditions: testCase.preconditions.join('\n'),
     steps: testCase.steps.join('\n'), expected: testCase.expected.join('\n'),
-    data: Object.entries(testCase.data).map(([k, v]) => `${k}=${v}`).join('\n'), notes: testCase.notes.join('\n'),
+    data: formatDataLines(testCase.data), notes: testCase.notes.join('\n'),
   }
 }
 
-export function CasesPage({ projectId, project, go }: { projectId: string; project?: Project; go: Go }) {
+export function CasesPage({ projectId, project, go }: { projectId: string, project?: Project, go: Go }) {
   const [cases, setCases] = useState<TestCase[]>([])
   const [plans, setPlans] = useState<Record<string, StepPlan[]>>({})
   const [draft, setDraft] = useState<Draft>(EMPTY)
 
-  const load = useCallback(async () => {
+  // 加载只取数据；状态在异步回调里设置（effect 内不同步 setState）
+  const fetchAll = useCallback(async () => {
     const list = await api<TestCase[]>(`/api/cases?projectId=${projectId}`)
-    setCases(list)
     const entries = await Promise.all(list.map(async (c) => [c.id, await api<StepPlan[]>(`/api/cases/${c.id}/plans`)] as const))
-    setPlans(Object.fromEntries(entries))
+    return { list, byCase: Object.fromEntries(entries) }
   }, [projectId])
-  useEffect(() => { void load() }, [load])
-  useReload(['case', 'plan'], () => void load())
+  const apply = useCallback(({ list, byCase }: { list: TestCase[], byCase: Record<string, StepPlan[]> }) => {
+    setCases(list)
+    setPlans(byCase)
+  }, [])
+  useEffect(() => {
+    void fetchAll().then(apply)
+  }, [fetchAll, apply])
+  useReload(['case', 'plan'], () => void fetchAll().then(apply))
 
   const save = async () => {
     const body = {
       projectId, title: draft.title, module: draft.module || undefined, preconditions: lines(draft.preconditions),
       steps: lines(draft.steps), expected: lines(draft.expected), notes: lines(draft.notes),
-      data: Object.fromEntries(lines(draft.data).map((line) => [line.split('=')[0]!.trim(), line.slice(line.indexOf('=') + 1).trim()])),
+      data: parseDataLines(draft.data),
     }
     if (draft.id === undefined) await api('/api/cases', { body })
     else await api(`/api/cases/${draft.id}`, { method: 'PUT', body })
     setDraft(EMPTY)
   }
   const field = (key: keyof Draft, label: string, rows = 0, placeholder = '') => (
-    <label>{label}{rows === 0
-      ? <input value={draft[key] ?? ''} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} placeholder={placeholder} />
-      : <textarea rows={rows} value={draft[key] ?? ''} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} placeholder={placeholder} />}</label>
+    <label>
+      {label}
+      {rows === 0
+        ? <input value={draft[key] ?? ''} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} placeholder={placeholder} />
+        : <textarea rows={rows} value={draft[key] ?? ''} onChange={(e) => setDraft({ ...draft, [key]: e.target.value })} placeholder={placeholder} />}
+    </label>
   )
 
   return (
     <div className="page">
-      <header><h1>用例录入</h1><p>自然语言写用例，一句一行。用「」标出页面上的文字，数据用 <code>{'${data.key}'}</code> 引用。</p></header>
+      <header>
+        <h1>用例录入</h1>
+        <p>自然语言写用例，一句一行。用「」标出页面上的文字，数据用 <code>{'${data.key}'}</code> 引用。</p>
+      </header>
       <div className="split">
         <section className="card">
           <h2>{draft.id === undefined ? '新建用例' : '编辑用例'}</h2>
@@ -85,7 +97,10 @@ export function CasesPage({ projectId, project, go }: { projectId: string; proje
                 const latest = plans[testCase.id]?.find((plan) => plan.status === 'approved' || plan.status === 'draft')
                 return (
                   <tr key={testCase.id}>
-                    <td><a onClick={() => setDraft(toDraft(testCase))}>{testCase.title}</a><div className="muted small">v{testCase.version}{testCase.source ? ` · ${testCase.source}` : ''}</div></td>
+                    <td>
+                      <button type="button" className="linklike" onClick={() => setDraft(toDraft(testCase))}>{testCase.title}</button>
+                      <div className="muted small">v{testCase.version}{testCase.source ? ` · ${testCase.source}` : ''}</div>
+                    </td>
                     <td>{testCase.module}</td>
                     <td>{testCase.steps.length} / {testCase.expected.length}</td>
                     <td className="small">{Object.keys(testCase.data).join(', ') || '—'}</td>
@@ -103,47 +118,62 @@ export function CasesPage({ projectId, project, go }: { projectId: string; proje
   )
 }
 
-interface ChecklistItem { key: string; section: string; title: string }
+interface ChecklistItem { key: string, section: string, title: string }
 
 function ChecklistImporter({ projectId }: { projectId: string }) {
-  const [files, setFiles] = useState<{ file: string; count: number }[]>([])
+  const [files, setFiles] = useState<{ file: string, count: number }[]>([])
   const [file, setFile] = useState('')
   const [items, setItems] = useState<ChecklistItem[]>([])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [error, setError] = useState<string>()
   const [result, setResult] = useState<string>()
 
-  useEffect(() => { api<{ file: string; count: number }[]>(`/api/importers/${projectId}/checklists`).then(setFiles, (e: Error) => setError(e.message)) }, [projectId])
   useEffect(() => {
-    if (file === '') return
-    setPicked(new Set())
-    api<ChecklistItem[]>(`/api/importers/${projectId}/checklists/${file}`).then(setItems, (e: Error) => setError(e.message))
+    api<{ file: string, count: number }[]>(`/api/importers/${projectId}/checklists`).then(setFiles, (e: Error) => setError(e.message))
+  }, [projectId])
+  useEffect(() => {
+    if (file !== '') api<ChecklistItem[]>(`/api/importers/${projectId}/checklists/${file}`).then(setItems, (e: Error) => setError(e.message))
   }, [projectId, file])
+
+  const chooseFile = (next: string) => {
+    setFile(next)
+    setItems([])
+    setPicked(new Set())
+  }
 
   return (
     <section className="card">
       <h2>从功能点清单导入</h2>
       <ErrorLine error={error} />
       <div className="actions">
-        <select value={file} onChange={(e) => setFile(e.target.value)}>
+        <select value={file} onChange={(e) => chooseFile(e.target.value)} aria-label="清单文件">
           <option value="">选择清单文件…</option>
           {files.map((f) => <option key={f.file} value={f.file}>{f.file}（{f.count} 条）</option>)}
         </select>
-        <AsyncButton disabled={picked.size === 0} onClick={async () => {
-          const r = await api<{ created: number; skipped: number }>(`/api/importers/${projectId}/checklists`, { body: { file, keys: [...picked] } })
-          setResult(`已导入 ${r.created} 条，跳过重复 ${r.skipped} 条`)
-        }}>导入所选（{picked.size}）</AsyncButton>
+        <AsyncButton
+          disabled={picked.size === 0}
+          onClick={async () => {
+            const r = await api<{ created: number, skipped: number }>(`/api/importers/${projectId}/checklists`, { body: { file, keys: [...picked] } })
+            setResult(`已导入 ${r.created} 条，跳过重复 ${r.skipped} 条`)
+          }}
+        >
+          导入所选（{picked.size}）
+        </AsyncButton>
         {result && <span className="ok">{result}</span>}
       </div>
       <div className="checklist">
         {items.map((item) => (
           <label key={item.key} className="check">
-            <input type="checkbox" checked={picked.has(item.key)} onChange={(e) => {
-              const next = new Set(picked)
-              if (e.target.checked) next.add(item.key)
-              else next.delete(item.key)
-              setPicked(next)
-            }} />
+            <input
+              type="checkbox"
+              checked={picked.has(item.key)}
+              onChange={(e) => {
+                const next = new Set(picked)
+                if (e.target.checked) next.add(item.key)
+                else next.delete(item.key)
+                setPicked(next)
+              }}
+            />
             <span className="mono">{item.key}</span> {item.title}
           </label>
         ))}

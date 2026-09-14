@@ -19,7 +19,7 @@
 ## 解决的痛点
 
 | 痛点 | 本平台的做法 |
-|------|--------------|
+| --- | --- |
 | 手写 Playwright 脚本慢，用例与脚本两套维护 | 自然语言用例由编译 Agent 转成 Step DSL，人在表格里审阅批准 |
 | 脚本跑挂了看不懂，只能翻日志 | 执行画面实时直播，逐步截图、录像、trace 全部留存 |
 | 失败原因混在一起：脚本错、缺数据、环境抖动、真缺陷 | 归因 Agent 分四类，每类走不同的处理路径 |
@@ -51,7 +51,7 @@
 3. 浏览器打开 `http://127.0.0.1:4600`，按页面顺序操作四条演示用例：
 
    | 步骤 | 页面 | 操作 | 预期 |
-   |------|------|------|------|
+| --- | --- | --- | --- |
    | 1 | ② 步骤编译 | 逐个用例点“编译”→“批准” | 四个计划都显示“已批准” |
    | 2 | ③ 执行直播 | 点“全选可执行”→“执行所选” | 画面实时变化；登录用例通过，其余三条未通过 |
    | 3 | ④ 失败门禁 | “修改昵称”写 `按钮叫「保存」` 并提交；“VIP 兑换”填 `vipCode = VIP-2026` 并提交 | 两条都变为“重跑中”，随后在“最近关闭”中显示“已解决” |
@@ -91,7 +91,7 @@ DEEPSEEK_API_KEY=sk-...      LLM_PROVIDER=deepseek pnpm start
 
 ## 目录结构
 
-```
+```text
 ui-test-agent/
 ├── packages/
 │   ├── core/       # 领域模型、门禁纯函数、文件存储
@@ -107,19 +107,25 @@ ui-test-agent/
 ├── projects/
 │   ├── demo/       # 本地演示站点（埋有一个缺陷）+ 四条演示用例
 │   └── molardata/  # MolarData 接入配置
+├── tests/e2e/      # 端到端测试：API 流程、浏览器操作前端的流程、边界流程
 ├── config/llm.yaml # 模型路由
 ├── data/           # 运行数据（不入库）
-└── docs/           # PLAN.md、architecture.md
+└── docs/           # PLAN.md、architecture.md、testing.md
 ```
 
 ## 开发与测试
 
 ```bash
-pnpm typecheck   # 全部包类型检查
-pnpm test        # core 门禁单测 → agent 链路 → runner 真实浏览器 → server 端到端闭环
+pnpm check          # 规范检查 + 类型检查 + 全部测试（提交前跑这个）
+pnpm test           # 全部测试：单元 + 端到端
+pnpm test:unit      # 只跑单元测试，秒级
+pnpm test:e2e       # 只跑端到端测试（真实服务 + 真实浏览器）
+pnpm lint           # ESLint + markdownlint
 ```
 
-**预期**：`core` 19 项、`agent` 6 项、`runner` 4 项、`server` 2 项全部通过。`server` 的端到端测试会启动真实服务与浏览器，完整跑一遍“快速开始”第 3 步的流程。
+**预期**：21 个测试文件、392 项全部通过，末尾打印测试数据清理检查结果。端到端测试使用 `mock` 模型，不联网、不产生模型费用；测试产生的数据在结束时全部删除，仓库不会被写脏。
+
+测试分层、数据清理机制与新增测试的写法见 [docs/testing.md](docs/testing.md)。
 
 ## FAQ
 
@@ -138,7 +144,7 @@ pnpm test        # core 门禁单测 → agent 链路 → runner 真实浏览器
 ## 术语表
 
 | 术语 | 含义 |
-|------|------|
+| --- | --- |
 | Step DSL | 平台的可执行步骤格式：`action` + `target` + `value` + `expect` |
 | Plan / 计划 | 某个用例某个版本的 Step DSL；批准后不可变，修正生成新版本 |
 | Run | 一次执行；`round` 表示第几轮门禁，`attemptId` 防止迟到写入 |

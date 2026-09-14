@@ -1,0 +1,70 @@
+# MolarData 测试数据目录：compiler 通过 list_test_data 查看，并在计划的 data 中以 source=catalog 引用。
+# 只有这里登记的条目会交给模型。值从环境变量或 project.yaml 的 envFile（molardata-e2e/.env）展开；
+# 展开为空的条目会显示为「未配置」，执行时由门禁请人补充。
+# tags 含 path 的值按仓库根解析为绝对路径。
+entries:
+  # ---------- 任务 ----------
+  - key: task.iat
+    description: 图像通用工具（IAT）任务：已配标签，工作流为「导入时分批」，已有导入数据。工作流画布、节点增删改、数据导入、条目操作优先使用
+    value: ${TASK_ID_IAT}
+    tags: [task, image, workflow, import, item]
+  - key: task.pcat
+    description: 点云工具（PCAT）任务：已配标签
+    value: ${TASK_ID_PCAT}
+    tags: [task, pointcloud, import]
+  - key: task.vmt
+    description: 视频多模态工具（VMT）任务：已配标签
+    value: ${TASK_ID_VMT}
+    tags: [task, video, import]
+  - key: task.qt2
+    description: 问卷工具任务
+    value: ${TASK_ID_QT2}
+    tags: [task, survey, import]
+
+  # ---------- 账号角色（登录态由 storageState 提供，计划中不要写登录步骤）----------
+  - key: account.admin
+    description: 默认角色。空间创建者 / 超级管理员，可增删改工作流节点、看到「导入导出」菜单
+    value: admin
+    tags: [account]
+  - key: account.annotator
+    description: 标注员，跨角色用例使用（计划 authRole 需人设置）
+    value: annotator
+    tags: [account]
+  - key: account.reviewer
+    description: 审核员，跨角色用例使用
+    value: reviewer
+    tags: [account]
+
+  # ---------- 本地素材（molardata-e2e 首次运行时生成 test-data/）----------
+  - key: file.images.whitelist
+    description: 白名单格式图片目录（png/jpg/bmp/webp），正常上传用
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/images/whitelist
+    tags: [file, image, path]
+  - key: file.images.mixed
+    description: 白名单与非白名单混合的图片目录，验证过滤
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/images/mixed
+    tags: [file, image, path]
+  - key: file.images.many
+    description: 大量小图片，上传有可观测的「进行中」窗口（取消 / 进度 / 刷新类用例）
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/images/many
+    tags: [file, image, path]
+  - key: file.pre.voc
+    description: VOC 预标注样本目录
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/preannotation/voc
+    tags: [file, preannotation, path]
+  - key: file.pre.yolo
+    description: YOLO 预标注样本目录
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/preannotation/yolo
+    tags: [file, preannotation, path]
+  - key: file.pre.coco
+    description: COCO 预标注样本目录
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/preannotation/coco
+    tags: [file, preannotation, path]
+  - key: file.video
+    description: 1 秒合法 mp4 视频目录
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/video
+    tags: [file, video, path]
+  - key: file.audio
+    description: 合法音频样本目录（mp3/wav）
+    value: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/test-data/audio
+    tags: [file, audio, path]

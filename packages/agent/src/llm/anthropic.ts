@@ -8,11 +8,13 @@ export interface AnthropicConfig {
   /** 服务端拒答回退：fallbacks: "default" */
   refusalFallback?: boolean
   maxTokens?: number
+  /** 测试接缝：替换 SDK 的 HTTP 实现 */
+  fetch?: typeof globalThis.fetch
 }
 
 type BlockParam = Anthropic.Beta.BetaContentBlockParam
 
-function toParams(messages: readonly ChatMessage[]): Anthropic.Beta.BetaMessageParam[] {
+export function toAnthropicMessages(messages: readonly ChatMessage[]): Anthropic.Beta.BetaMessageParam[] {
   return messages.map((message): Anthropic.Beta.BetaMessageParam => {
     if (message.role === 'user') {
       const blocks: BlockParam[] = (message.images ?? []).map((image) => ({
@@ -52,7 +54,10 @@ export class AnthropicAdapter implements LlmAdapter {
   constructor(private readonly config: AnthropicConfig) {
     this.model = config.model
     // 未显式给 key 时由 SDK 解析 ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / `ant auth login` 凭据
-    this.client = new Anthropic(config.apiKey === undefined ? {} : { apiKey: config.apiKey })
+    this.client = new Anthropic({
+      ...(config.apiKey === undefined ? {} : { apiKey: config.apiKey }),
+      ...(config.fetch === undefined ? {} : { fetch: config.fetch }),
+    })
   }
 
   async chat(request: ChatRequest): Promise<ChatResponse> {
@@ -60,14 +65,16 @@ export class AnthropicAdapter implements LlmAdapter {
       model: this.config.model,
       max_tokens: this.config.maxTokens ?? 16_000,
       system: request.system,
-      messages: toParams(request.messages),
-      ...(request.tools.length === 0 ? {} : {
-        tools: request.tools.map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          input_schema: tool.inputSchema as Anthropic.Beta.BetaTool.InputSchema,
-        })),
-      }),
+      messages: toAnthropicMessages(request.messages),
+      ...(request.tools.length === 0
+        ? {}
+        : {
+            tools: request.tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.inputSchema as Anthropic.Beta.BetaTool.InputSchema,
+            })),
+          }),
       ...(this.config.effort === undefined ? {} : { output_config: { effort: this.config.effort } }),
       ...(this.config.refusalFallback === true ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
     })
@@ -75,9 +82,12 @@ export class AnthropicAdapter implements LlmAdapter {
     const toolCalls = response.content.flatMap((block) => (
       block.type === 'tool_use' ? [{ id: block.id, name: block.name, input: (block.input ?? {}) as Record<string, unknown> }] : []
     ))
-    const stop = response.stop_reason === 'tool_use' ? 'tool_use'
-      : response.stop_reason === 'refusal' ? 'refusal'
-        : response.stop_reason === 'max_tokens' ? 'max_tokens'
+    const stop = response.stop_reason === 'tool_use'
+      ? 'tool_use'
+      : response.stop_reason === 'refusal'
+        ? 'refusal'
+        : response.stop_reason === 'max_tokens'
+          ? 'max_tokens'
           : 'end'
     return {
       text,

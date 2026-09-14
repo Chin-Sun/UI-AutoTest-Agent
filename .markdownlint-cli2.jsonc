@@ -1,0 +1,14 @@
+{
+  // Markdown 规范检查（文档与 Skill）
+  "globs": ["**/*.md"],
+  "ignores": ["**/node_modules/**", "components/_drafts/**", "packages/*/test/fixtures/**", "data/**"],
+  "config": {
+    "default": true,
+    // 中文长句不按字符数折行
+    "MD013": false,
+    // README 顶部允许少量 HTML
+    "MD033": false,
+    // 不同章节下允许同名小标题
+    "MD024": { "siblings_only": true }
+  }
+}
