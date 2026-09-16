@@ -3,21 +3,21 @@
 # 展开为空的条目会显示为「未配置」，执行时由门禁请人补充。
 # tags 含 path 的值按仓库根解析为绝对路径。
 entries:
-  # ---------- 任务 ----------
+  # ---------- 任务（人工预定义，值为 taskId 或任务名；为空时 molar.ensureTask 自动创建 uta-auto-<工具> 并记住）----------
   - key: task.iat
-    description: 图像通用工具（IAT）任务：已配标签，工作流为「导入时分批」，已有导入数据。工作流画布、节点增删改、数据导入、条目操作优先使用
+    description: 图像通用工具（IAT）任务，人工预定义：已配标签，工作流为「导入时分批」，已有导入数据。工作流画布、节点增删改、数据导入、条目操作优先使用；配合 molar.ensureTask {tool:IAT, ref:task.iat}
     value: ${TASK_ID_IAT}
     tags: [task, image, workflow, import, item]
   - key: task.pcat
-    description: 点云工具（PCAT）任务：已配标签
+    description: 点云工具（PCAT）任务，人工预定义：已配标签；配合 molar.ensureTask {tool:PCAT, ref:task.pcat}
     value: ${TASK_ID_PCAT}
     tags: [task, pointcloud, import]
   - key: task.vmt
-    description: 视频多模态工具（VMT）任务：已配标签
+    description: 视频多模态工具（VMT）任务，人工预定义：已配标签；配合 molar.ensureTask {tool:VMT, ref:task.vmt}
     value: ${TASK_ID_VMT}
     tags: [task, video, import]
   - key: task.qt2
-    description: 问卷工具任务
+    description: 问卷工具（QT2）任务，人工预定义；配合 molar.ensureTask {tool:QT2, ref:task.qt2}
     value: ${TASK_ID_QT2}
     tags: [task, survey, import]
 

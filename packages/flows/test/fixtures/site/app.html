@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>应用首页</title></head>
+<body>
+  <h1>应用首页</h1>
+  <p id="who"></p>
+  <script>
+    // 和真实前端一样：先渲染页面，再用 token 调用户信息接口；接口 401（约 2 秒后）才踢回登录页
+    const token = localStorage.getItem('TOKEN')
+    if (!token) {
+      location.replace('std-login.html')
+    } else {
+      document.getElementById('who').textContent = token
+      fetch('api/slow-user', { headers: { 'access-token': token } }).then((response) => {
+        if (response.status === 401) {
+          localStorage.removeItem('TOKEN')
+          location.replace('std-login.html')
+        }
+      })
+    }
+  </script>
+</body>
+</html>

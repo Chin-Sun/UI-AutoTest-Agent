@@ -9,7 +9,7 @@ import { z } from 'zod'
 export const STEP_ACTIONS = [
   'goto', 'click', 'fill', 'select', 'check', 'uncheck', 'upload', 'press', 'hover', 'waitFor',
   'assertVisible', 'assertHidden', 'assertText', 'assertValue', 'assertUrl', 'assertCount',
-  'screenshot',
+  'screenshot', 'use',
 ] as const
 export type StepAction = (typeof STEP_ACTIONS)[number]
 
@@ -42,6 +42,10 @@ export const StepSchema = z.object({
   /** 对应原用例的第几句（0 起），用于前端对照 */
   caseRef: z.number().int().min(0).optional(),
   stage: z.enum(FLOW_STAGES).optional(),
+  /** action=use 时调用的项目积木 id（如 molar.ensureTask） */
+  flow: z.string().optional(),
+  /** 积木参数；字符串值可含 ${data.key} */
+  params: z.record(z.string(), z.unknown()).optional(),
   timeoutMs: z.number().int().positive().optional(),
   note: z.string().optional(),
 })
@@ -259,6 +263,64 @@ export const TestDataEntrySchema = z.object({
 })
 export type TestDataEntry = z.infer<typeof TestDataEntrySchema>
 
+/** 项目积木的对外描述（执行代码在 @uta/flows / projects/<id>/flows）：供计划校验与 AI 选择 */
+export interface FlowSpec {
+  id: string
+  description: string
+  /** 参数的 JSON Schema */
+  paramsSchema: Record<string, unknown>
+  outputs: string[]
+  /** 返回参数问题清单，空数组表示合法 */
+  validate: (params: unknown) => string[]
+}
+
+// ---------- 登录 ----------
+
+/** 登录页上的声明式动作 */
+export const LoginActionSchema = z.union([
+  /** 勾选名称包含该文字的复选框（如「用户协议」）；已勾选则跳过 */
+  z.object({ check: z.string().min(1) }),
+  /** 可选弹窗：出现就点，不出现不等满时间。值为按钮文字或 CSS 选择器 */
+  z.object({ clickIfAppears: z.string().min(1), within: z.string().optional(), timeoutMs: z.number().int().positive().optional() }),
+  /** 点击指定元素：按钮文字或 CSS 选择器 */
+  z.object({ click: z.string().min(1) }),
+])
+
+/**
+ * 账号。project.yaml 里写成 ${ENV} 引用，真实值只留在服务端；
+ * 对外（API / 前端 / 模型）只暴露变量名与是否已配置。
+ */
+export const LoginAccountSchema = z.object({
+  /** 引用的环境变量没配时，YAML 展开结果为空（null），视为未配置 */
+  username: z.string().nullish(),
+  password: z.string().nullish(),
+  usernameVar: z.string().optional(),
+  passwordVar: z.string().optional(),
+  configured: z.boolean().optional(),
+})
+
+export const LoginConfigSchema = z.object({
+  /** 登录页地址，相对 baseURL */
+  url: z.string().min(1).default('/login'),
+  accounts: z.record(z.string(), LoginAccountSchema).default({}),
+  /** 计划没指定 authRole 时使用；默认取第一个账号 */
+  defaultRole: z.string().optional(),
+  /** 自动识别不准时手工指定选择器 */
+  fields: z.object({ username: z.string().optional(), password: z.string().optional(), submit: z.string().optional() }).default({}),
+  beforeSubmit: z.array(LoginActionSchema).default([]),
+  afterSubmit: z.array(LoginActionSchema).default([]),
+  /** 登录成功的附加判定；默认为离开登录页且没有可见密码框 */
+  success: z.object({ urlNotContains: z.string().optional(), localStorageKey: z.string().optional(), visible: z.string().optional() }).default({}),
+  /** 把已知失败转成可读报错 */
+  failures: z.array(z.union([
+    z.object({ responseUrlContains: z.string().min(1), statusGte: z.number().int().default(400), message: z.string().min(1) }),
+    z.object({ urlContains: z.string().min(1), message: z.string().min(1) }),
+  ])).default([]),
+  /** 复用登录态前用来验证是否仍有效的页面 */
+  check: z.object({ url: z.string().min(1).default('/') }).default({ url: '/' }),
+})
+export type LoginConfig = z.infer<typeof LoginConfigSchema>
+
 export const ProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -271,6 +333,12 @@ export const ProjectSchema = z.object({
   /** 动作 / 断言超时（毫秒），不填使用执行器默认值（8000 / 5000） */
   actionTimeoutMs: z.number().int().positive().optional(),
   assertTimeoutMs: z.number().int().positive().optional(),
+  /** 页面跳转超时（毫秒），不填使用执行器默认值 30000 */
+  navigationTimeoutMs: z.number().int().positive().optional(),
+  /** 表单登录配置：配置后每次执行前自动复用或建立会话，计划里不需要登录步骤 */
+  login: LoginConfigSchema.optional(),
+  /** 页面脚本执行前写入 localStorage，如锁定界面语言 { LOCALE: zh-CN } */
+  localStorage: z.record(z.string(), z.string()).optional(),
   /** 注入给 compiler 的项目知识 skill 名 */
   knowledgeSkills: z.array(z.string()).default([]),
   importers: z.record(z.string(), z.string()).default({}),

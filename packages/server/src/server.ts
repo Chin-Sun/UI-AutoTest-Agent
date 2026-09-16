@@ -7,7 +7,8 @@ import type { runPlan } from '@uta/runner'
 import { buildApp } from './app'
 import { Bus } from './bus'
 import { Pipeline } from './pipeline'
-import { loadProjects } from './projects'
+import { loadProjectFlows } from '@uta/flows'
+import { loadProjects, projectDir } from './projects'
 import { usageRecorder } from './usage'
 
 export const REPO_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
@@ -52,7 +53,12 @@ export async function startServer(options: ServerOptions = {}) {
   })
   // 项目配置里的 ${UTA_PORT} 指向本服务（demo 站点由本服务托管）
   const projects = await loadProjects(projectsDir, REPO_ROOT, { ...process.env, UTA_PORT: String(port) })
-  const pipeline = new Pipeline({ store, agents, registry, projects, bus, dataRoot, ...(options.runPlan === undefined ? {} : { runPlan: options.runPlan }) })
+  // 项目积木：projects/<目录>/flows/index.ts（没有则为空）
+  const flows = new Map(await Promise.all([...projects.values()].map(async (project) => {
+    const dir = projectDir(project)
+    return [project.id, dir === undefined ? [] : await loadProjectFlows(dir)] as const
+  })))
+  const pipeline = new Pipeline({ store, agents, registry, projects, bus, dataRoot, flows, ...(options.runPlan === undefined ? {} : { runPlan: options.runPlan }) })
   if (options.seed ?? true) await pipeline.seed('demo', join(projectsDir, 'demo/cases.json'))
 
   const app = await buildApp({

@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>标准表单登录</title></head>
+<body>
+  <h1>登录</h1>
+  <form id="f">
+    <label>账号 <input name="user"></label>
+    <label>密码 <input name="pass" type="password"></label>
+    <button type="submit">登录</button>
+  </form>
+  <p id="msg" class="error-text"></p>
+  <script>
+    document.getElementById('f').addEventListener('submit', (event) => {
+      event.preventDefault()
+      const user = event.target.user.value
+      if (event.target.pass.value !== 'secret') {
+        document.getElementById('msg').textContent = '用户名或密码错误'
+        return
+      }
+      if (user === 'nogroup') {
+        location.href = 'group.html'
+        return
+      }
+      localStorage.setItem('TOKEN', `token-${user}`)
+      location.href = 'home.html'
+    })
+  </script>
+</body>
+</html>

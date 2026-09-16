@@ -1,6 +1,40 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, type Project } from '../api'
 import { AsyncButton, LiveLog, Pill, TokenUsage } from '../components'
+
+interface FlowView {
+  id: string
+  description: string
+  outputs: string[]
+}
+
+interface ProjectFlows {
+  project: Project
+  flows: FlowView[]
+}
+
+/** 登录配置状态：每个角色是否配齐账号，缺哪个环境变量 */
+export function LoginStatus({ project }: { project: Project }) {
+  if (project.login === undefined) return <span className="muted small">未配置（无需登录，或使用 authRoles 登录态文件）</span>
+  const accounts = Object.entries(project.login.accounts)
+  if (accounts.length === 0) return <Pill tone="failed">没有配置账号</Pill>
+  return (
+    <>
+      {accounts.map(([role, account]) => {
+        const missing = [account.usernameVar, account.passwordVar].filter((name): name is string => name !== undefined)
+        return (
+          <div key={role}>
+            <Pill tone="role">{role}</Pill>
+            {account.configured === true
+              ? <Pill tone="passed">已配置</Pill>
+              : <Pill tone="failed">{missing.length === 0 ? '缺少账号' : `在 .env 填写 ${missing.join('、')}`}</Pill>}
+          </div>
+        )
+      })}
+      <div className="muted small mono">{project.login.url}</div>
+    </>
+  )
+}
 
 interface ComponentsState {
   skills: { name: string, description: string, roles: string[] }[]
@@ -12,10 +46,16 @@ export function ComponentsPage() {
   const [state, setState] = useState<ComponentsState>()
   const [request, setRequest] = useState('')
   const [answer, setAnswer] = useState<string>()
+  const [projects, setProjects] = useState<ProjectFlows[]>([])
   const load = useCallback(() => {
     void api<ComponentsState>('/api/components').then(setState)
   }, [])
   useEffect(load, [load])
+  useEffect(() => {
+    void api<Project[]>('/api/projects')
+      .then((list) => Promise.all(list.map(async (project) => ({ project, flows: await api<FlowView[]>(`/api/projects/${project.id}/flows`) }))))
+      .then(setProjects)
+  }, [])
 
   const toggle = async (name: string, enabled: boolean) => {
     await api(`/api/components/mcp/${name}`, { body: { enabled } })
@@ -81,6 +121,41 @@ export function ComponentsPage() {
           <LiveLog scopes={['ask']} title="Agent 过程" />
         </section>
       </div>
+      <section className="card">
+        <h2>被测项目：登录与流程积木</h2>
+        <p className="muted small">登录由 projects/&lt;id&gt;/project.yaml 的 login 配置驱动，执行前自动复用或建立会话；流程积木写在 projects/&lt;id&gt;/flows/，编译 Agent 通过 list_flows 选择。</p>
+        <table>
+          <thead>
+            <tr>
+              <th>项目</th>
+              <th>登录</th>
+              <th>流程积木</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projects.map(({ project, flows }) => (
+              <tr key={project.id}>
+                <td>
+                  <b>{project.name}</b>
+                  <div className="muted small mono">{project.baseURL}</div>
+                </td>
+                <td><LoginStatus project={project} /></td>
+                <td>
+                  {flows.length === 0
+                    ? <span className="muted">无</span>
+                    : flows.map((flow) => (
+                        <div key={flow.id} className="flow-item">
+                          <span className="mono">{flow.id}</span>
+                          <span className="muted small"> → {flow.outputs.length === 0 ? '无输出' : flow.outputs.join(', ')}</span>
+                          <div className="muted small">{flow.description}</div>
+                        </div>
+                      ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
       <section className="card">
         <h2>待审批草稿 <span className="muted">{state?.drafts.length ?? 0}</span></h2>
         {state?.drafts.length === 0 && <p className="muted">暂无草稿。</p>}

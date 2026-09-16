@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>首页</title></head>
+<body>
+  <h1>首页</h1>
+  <p id="who"></p>
+  <script>
+    // 没有 token 或 token 已失效：踢回登录页（模拟接口 401 后前端登出）
+    const token = localStorage.getItem('TOKEN')
+    if (!token || token === 'expired') setTimeout(() => location.replace('std-login.html'), 300)
+    else document.getElementById('who').textContent = token
+  </script>
+</body>
+</html>

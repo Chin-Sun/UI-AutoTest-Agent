@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@uta/core": "workspace:*",
+    "@uta/flows": "workspace:*",
     "playwright": "^1.63.0"
   }
 }

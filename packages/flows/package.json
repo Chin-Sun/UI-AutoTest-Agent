@@ -1,0 +1,19 @@
+{
+  "name": "@uta/flows",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "流程积木 SDK 与通用表单登录：与具体被测平台无关，平台专属积木写在 projects/<id>/flows/",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p .",
+    "test": "node ../../scripts/run-tests.mjs --project flows"
+  },
+  "dependencies": {
+    "@uta/core": "workspace:*",
+    "playwright": "^1.63.0",
+    "zod": "^4.6.1"
+  }
+}

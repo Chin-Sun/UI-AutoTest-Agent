@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Finding, TestCase } from '@uta/core'
 import { Bus } from '../src/bus'
 import { checklistContext, listChecklists, parseChecklist, readChecklist } from '../src/importers'
-import { expandEnv, loadProjects, parseEnvFile } from '../src/projects'
+import { expandEnv, loadProjects, parseEnvFile, projectDir, projectSecrets } from '../src/projects'
 import { renderReport } from '../src/report'
 import { demoProject, REPO } from './support'
 
@@ -66,6 +66,31 @@ describe('projects', () => {
     const env = { A: '1', EMPTY: '' }
     expect(expandEnv('${A}-${B:-2}-${EMPTY:-3}-${MISSING}', env)).toBe('1-2-3-')
     expect(expandEnv('无变量', env)).toBe('无变量')
+    expect(expandEnv('${X:-${A}}|${X:-${Y:-z}}|${A:-${B}}', env)).toBe('1|z|1')
+  })
+
+  it('login.accounts：真实值只留在服务端，Project 上只有变量名与是否已配置；项目目录可查', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'uta-projects-'))
+    await mkdir(join(dir, 'shop'))
+    await writeFile(join(dir, 'shop', 'project.yaml'), [
+      'id: shop', 'name: 商城', 'baseURL: https://shop.test',
+      'login:', '  accounts:',
+      '    admin:', '      username: ${SHOP_USER:-${FALLBACK_USER}}', '      password: ${SHOP_PASS}',
+      '    viewer:', '      username: ${VIEW_USER}', '      password: ${VIEW_PASS}',
+    ].join('\n'))
+    const shop = (await loadProjects(dir, '/repo', { FALLBACK_USER: 'alice', SHOP_PASS: 'hunter2' })).get('shop')!
+    expect(shop.login?.accounts).toEqual({
+      admin: { configured: true, usernameVar: 'SHOP_USER', passwordVar: 'SHOP_PASS' },
+      viewer: { configured: false, usernameVar: 'VIEW_USER', passwordVar: 'VIEW_PASS' },
+    })
+    expect(shop.login).toMatchObject({ url: '/login', check: { url: '/' }, beforeSubmit: [], failures: [] })
+    expect(JSON.stringify(shop)).not.toContain('hunter2')
+    expect(JSON.stringify(shop)).not.toContain('alice')
+    expect(projectSecrets(shop)?.accounts).toEqual({
+      admin: { account: { username: 'alice', password: 'hunter2' }, missingVars: [] },
+      viewer: { missingVars: ['VIEW_USER', 'VIEW_PASS'] },
+    })
+    expect(projectDir(shop)).toBe(join(dir, 'shop'))
   })
 
   it('加载 project.yaml：相对路径按仓库根解析，绝对路径保留；没有 project.yaml 的目录跳过', async () => {
@@ -127,7 +152,11 @@ describe('projects', () => {
   it('仓库自带的 demo 与 molardata 项目可加载', async () => {
     const projects = await loadProjects(join(REPO, 'projects'), REPO, { UTA_PORT: '4999' })
     expect(projects.get('demo')?.baseURL).toBe('http://localhost:4999/demo/')
-    expect(projects.get('molardata')).toMatchObject({ defaultAuthRole: 'admin', knowledgeSkills: ['molar-platform'] })
+    expect(projects.get('molardata')).toMatchObject({
+      knowledgeSkills: ['molar-platform'], navigationTimeoutMs: 45_000, localStorage: { LOCALE: 'zh-CN' },
+      login: { url: '/login', success: { localStorageKey: 'TOKEN' }, check: { url: '/dashboard' }, accounts: { admin: { usernameVar: 'MOLAR_ADMIN_USERNAME', passwordVar: 'MOLAR_ADMIN_PASSWORD' } } },
+    })
+    expect(projectDir(projects.get('molardata')!)).toBe(join(REPO, 'projects', 'molardata'))
     const catalog = projects.get('molardata')!.testData
     expect(catalog.map((item) => item.key)).toEqual(expect.arrayContaining(['task.iat', 'account.admin', 'file.images.whitelist']))
     for (const item of catalog.filter((candidate) => candidate.tags.includes('path'))) expect(item.value).toMatch(/^\//)

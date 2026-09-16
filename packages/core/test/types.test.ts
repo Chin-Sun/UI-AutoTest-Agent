@@ -24,8 +24,8 @@ describe('TargetSchema', () => {
 })
 
 describe('StepSchema', () => {
-  it('覆盖全部 17 个动作', () => {
-    expect(STEP_ACTIONS).toHaveLength(17)
+  it('覆盖全部 18 个动作', () => {
+    expect(STEP_ACTIONS).toHaveLength(18)
     for (const action of STEP_ACTIONS) expect(StepSchema.safeParse({ id: 's1', action }).success).toBe(true)
   })
 

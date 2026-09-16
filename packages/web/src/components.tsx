@@ -1,6 +1,6 @@
 /** 页面共用的小组件 */
 import { useEffect, useState, type ReactNode } from 'react'
-import { FLOW_STAGES, STEP_ACTIONS } from './steps'
+import { FLOW_STAGES, formatParams, parseParams, STEP_ACTIONS } from './steps'
 import { api, useBus, type BusEvent, type Step, type Target, type UsageRecord } from './api'
 import { addTokens, EMPTY_TOKENS, formatTokens, type TokenTotals } from './format'
 import { ACTION_LABEL, STAGE_LABEL, targetLabel, time } from './labels'
@@ -213,8 +213,34 @@ export function StepTable({ steps, sentences, editable, onChange, statusOf, onSe
                 ? <select value={step.action} onChange={(e) => patch(index, { action: e.target.value as Step['action'] })}>{STEP_ACTIONS.map((a) => <option key={a} value={a}>{ACTION_LABEL[a]}</option>)}</select>
                 : ACTION_LABEL[step.action]}
             </td>
-            <td>{editable ? <TargetEditor value={step.target} onChange={(target) => patch(index, { target })} /> : targetLabel(step.target)}</td>
-            <td>{editable ? <input value={step.value ?? ''} onChange={(e) => patch(index, { value: clean(e.target.value) })} /> : <span className="mono">{step.value}</span>}</td>
+            {step.action === 'use'
+              ? (
+                  <>
+                    <td>{editable ? <input value={step.flow ?? ''} placeholder="积木 id" aria-label="积木" onChange={(e) => patch(index, { flow: clean(e.target.value) })} /> : <span className="mono">{step.flow}</span>}</td>
+                    <td>
+                      {editable
+                        ? (
+                            <input
+                              key={formatParams(step.params)}
+                              defaultValue={formatParams(step.params)}
+                              placeholder='{"key":"value"}'
+                              aria-label="积木参数"
+                              onBlur={(e) => {
+                                const params = parseParams(e.target.value)
+                                if (params !== undefined) patch(index, { params })
+                              }}
+                            />
+                          )
+                        : <span className="mono">{formatParams(step.params)}</span>}
+                    </td>
+                  </>
+                )
+              : (
+                  <>
+                    <td>{editable ? <TargetEditor value={step.target} onChange={(target) => patch(index, { target })} /> : targetLabel(step.target)}</td>
+                    <td>{editable ? <input value={step.value ?? ''} onChange={(e) => patch(index, { value: clean(e.target.value) })} /> : <span className="mono">{step.value}</span>}</td>
+                  </>
+                )}
             <td>{editable ? <input value={step.expect ?? ''} onChange={(e) => patch(index, { expect: clean(e.target.value) })} /> : step.expect}</td>
             {sentences && <td className="muted small">{step.caseRef === undefined ? '' : sentences[step.caseRef]}</td>}
             {statusOf && <td>{statusOf(step)}</td>}

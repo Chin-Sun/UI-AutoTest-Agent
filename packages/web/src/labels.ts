@@ -4,6 +4,7 @@ export const ACTION_LABEL: Record<Step['action'], string> = {
   goto: '打开', click: '点击', fill: '输入', select: '选择', check: '勾选', uncheck: '取消勾选', upload: '上传',
   press: '按键', hover: '悬停', waitFor: '等待', assertVisible: '断言可见', assertHidden: '断言不可见',
   assertText: '断言文本', assertValue: '断言值', assertUrl: '断言 URL', assertCount: '断言数量', screenshot: '截图',
+  use: '积木',
 }
 
 export const VERDICT_LABEL: Record<string, string> = {

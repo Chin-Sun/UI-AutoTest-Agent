@@ -17,6 +17,7 @@
     "@fastify/websocket": "^11.3.0",
     "@uta/agent": "workspace:*",
     "@uta/core": "workspace:*",
+    "@uta/flows": "workspace:*",
     "@uta/runner": "workspace:*",
     "fastify": "^5.12.3",
     "yaml": "^2.9.0",

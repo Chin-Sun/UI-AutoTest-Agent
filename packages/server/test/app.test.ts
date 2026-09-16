@@ -38,6 +38,8 @@ describe('基础', () => {
     expect(health.body).toMatchObject({ ok: true, llm: { compiler: 'mock' }, queue: { queued: [] } })
     expect(health.body.projects.map((p) => p.id)).toEqual(['demo', 'fixture'])
     expect((await req<unknown[]>('GET', '/api/projects')).body).toHaveLength(2)
+    expect((await req<unknown[]>('GET', '/api/projects/demo/flows')).body).toEqual([])
+    expect((await req('GET', '/api/projects/ghost/flows')).status).toBe(409)
   })
 })
 

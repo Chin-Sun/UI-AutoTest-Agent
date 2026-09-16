@@ -23,7 +23,8 @@ roles: [compiler, repairer]
 | --- | --- |
 | goto | value |
 | click / check / uncheck / hover | target |
-| fill / select / upload | target + value |
+| fill / select | target + value |
+| upload | target + value（绝对路径，多个文件用换行分隔）。target 可以是 file input，也可以是点击后唤起文件选择器的按钮或卡片；页面里常常没有 input，这时直接把按钮或卡片写成 target，不要先单独 click |
 | press | value（target 可选） |
 | waitFor | target 或毫秒数 value |
 | assertVisible / assertHidden | target |
@@ -35,10 +36,12 @@ roles: [compiler, repairer]
 
 1. **locator 优先级**：`testId` > `role+name` > `label` > `placeholder` > `text` > `css`。不要编造 testId；没把握时用 role/label/text。
 2. 按钮、链接用 `{role: "button"|"link", name}`；输入框优先 `{label}`，没有 label 时用 `{placeholder}`。
-3. 用例里的每条「预期」至少对应一个断言步骤，没有断言的计划会被门禁拒绝。
-4. 用例中以 `${data.key}` 出现的数据原样保留，不要替换成猜测值；缺的数据由门禁请人补充。
-5. 不确定页面结构时，如果 `playwright` MCP 可用，先打开页面读快照再出计划；否则按用例字面编译，并在 rationale 写明假设。
-6. 不要加入用例没有要求的步骤（例如额外登录），登录态由项目的 storageState 提供。
+3. 用例里的每条「预期」至少对应一个断言步骤，没有断言的计划会被门禁拒绝。`assertVisible` / `assertHidden` 只看 target，不要写 expect；想说明意图时写在 `note` 里。
+4. 文字定位默认是包含匹配：「文件」会命中「文件夹」。短文字、可能是其他文字一部分时，加 `"exact": true`。
+5. 用例中以 `${data.key}` 出现的数据原样保留，不要替换成猜测值；缺的数据由门禁请人补充。
+6. 不确定页面结构时，如果 `playwright` MCP 可用，先打开页面读快照再出计划；否则按用例字面编译，并在 rationale 写明假设。
+7. 不要加入用例没有要求的步骤（例如额外登录），登录由项目会话自动完成。
+8. 点击类动作要求目标唯一（断言只看第一个匹配）：页面上可能有同名文字（弹窗背后的列表、表头）时，用限定在容器内的 CSS 定位。
 
 ## 示例
 

@@ -18,7 +18,10 @@ export default defineConfig({
       pkg('agent'),
       pkg('server'),
       pkg('runner', { testTimeout: 60_000 }),
+      pkg('flows', { testTimeout: 60_000 }),
       pkg('web', { environment: 'jsdom' }),
+      // 被测项目自带的积木（projects/<id>/flows）
+      { extends: true, test: { name: 'projects', root: './projects', include: ['*/flows/test/**/*.test.ts'] } },
       { extends: true, test: { name: 'obs-recorder', root: './components/mcp/obs-recorder', include: ['test/**/*.test.ts'] } },
       // 端到端：真实服务 + 真实浏览器，串行执行避免抢 CPU 导致超时
       { extends: true, test: { name: 'e2e', root: './tests', include: ['e2e/**/*.test.ts'], testTimeout: 240_000, hookTimeout: 240_000, fileParallelism: false } },

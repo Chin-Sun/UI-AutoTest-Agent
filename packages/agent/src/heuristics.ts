@@ -112,7 +112,10 @@ function nearbyText(aria: string | undefined, expected: string): string | undefi
 export function heuristicTriage(input: TriageInput): TriageOutput {
   const step = input.steps.find((candidate) => candidate.id === input.failedStepId)
   const { verdict, reason } = heuristicVerdict(step, input.result)
-  const expected = step?.expect ?? targetText(step?.target)
+  // 可见性断言只看定位目标，expect 里即便写了说明文字也不是期望值
+  const expected = step !== undefined && (step.action === 'assertVisible' || step.action === 'assertHidden')
+    ? targetText(step.target)
+    : step?.expect ?? targetText(step?.target)
   if (verdict === 'data-missing') {
     const keys = (input.result.error?.message.split('：')[1] ?? '').split(/[,，]\s*/).filter(Boolean)
     return { verdict, severity: 'medium', summary: `缺少测试数据：${keys.join(', ')}`, missingKeys: keys, suggestion: `请补充 ${keys.map((key) => `${key}=…`).join('、')}` }
@@ -125,6 +128,14 @@ export function heuristicTriage(input: TriageInput): TriageOutput {
     return { verdict, severity: 'high', summary: `期望「${expected}」，实际${actual.startsWith('页面') ? '' : '为'}${actual}`, expected, actual }
   }
   if (verdict === 'env-flaky') return { verdict, severity: 'low', summary: reason }
+  if (step?.action === 'use') {
+    return {
+      verdict,
+      severity: 'medium',
+      summary: `${input.failedStepId} 积木 ${step.flow ?? '(未指定)'} 失败：${input.result.error?.message.split('\n')[0] ?? '未知错误'}`,
+      suggestion: '积木的前置条件或页面结构与假设不符：可以在反馈里说明正确做法，或修改积木参数；积木代码本身有误时需要修改 projects/<项目>/flows/',
+    }
+  }
   const role = step?.target !== undefined && 'role' in step.target ? step.target.role : 'textbox'
   const candidates = ariaCandidates(input.result.ariaSnapshot, role)
   return {

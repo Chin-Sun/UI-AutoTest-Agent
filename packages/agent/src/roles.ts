@@ -25,7 +25,7 @@ export const ROLES: Record<RoleName, RoleDef> = {
   compiler: {
     name: 'compiler',
     persona: '你是用例编译 Agent：把任意形态的测试用例（清单里的一句标题、自由文本、文档片段）编译成 Playwright 可执行的分阶段流程。你自己推断前置条件、挑选或构造测试数据、在流程中做出选择并说明理由；不要求输入是规范句式。你不执行测试，只输出计划。',
-    tools: ['list_components', 'load_skill', 'list_test_data', 'propose_plan'],
+    tools: ['list_components', 'load_skill', 'list_test_data', 'list_flows', 'propose_plan'],
     terminalTool: 'propose_plan',
     requiredSkills: ['case-to-flow', 'case-to-steps'],
   },
@@ -39,7 +39,7 @@ export const ROLES: Record<RoleName, RoleDef> = {
   repairer: {
     name: 'repairer',
     persona: '你是用例修正 Agent：根据人的反馈修正测试计划。只改与反馈相关的步骤、数据或决策点，其余步骤与 id 保持不变。',
-    tools: ['load_skill', 'list_test_data', 'propose_plan'],
+    tools: ['load_skill', 'list_test_data', 'list_flows', 'propose_plan'],
     terminalTool: 'propose_plan',
     requiredSkills: ['case-to-steps'],
   },

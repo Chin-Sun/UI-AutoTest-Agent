@@ -15,11 +15,13 @@ function pickPlan(list: StepPlan[], current: string | undefined): string | undef
 }
 
 /** 计划声明的测试数据：值 + 来源 + 理由；待人补充且还没有值的标红，草稿态可直接填写 */
-export function PlanData({ data, caseData, editable, onChange }: {
+export function PlanData({ data, caseData, editable, onChange, onClearCaseData }: {
   data: DataBinding[]
   caseData: Record<string, string>
   editable: boolean
   onChange: (data: DataBinding[]) => void
+  /** 清除用例上同名的数据，让计划里的值生效 */
+  onClearCaseData?: (key: string) => Promise<unknown>
 }) {
   if (data.length === 0) return null
   const setValue = (index: number, value: string) => onChange(data.map((binding, i) => (i === index ? { ...binding, value: value === '' ? undefined : value } : binding)))
@@ -49,6 +51,12 @@ export function PlanData({ data, caseData, editable, onChange }: {
                       ? <input value={binding.value ?? ''} placeholder={missing ? '待补充' : ''} aria-label={`${binding.key} 的值`} onChange={(e) => setValue(index, e.target.value)} />
                       : <span className="mono">{binding.value ?? '（待补充）'}</span>}
                   {supplied !== undefined && <div className="muted small">用例数据：{supplied}（优先使用）</div>}
+                  {supplied !== undefined && binding.value !== undefined && binding.value !== supplied && (
+                    <div className="warn small">
+                      ⚠ 执行时用的是用例数据「{supplied}」，这里的「{binding.value}」不会生效
+                      {onClearCaseData && <AsyncButton kind="linklike" onClick={() => onClearCaseData(binding.key)}>清除用例数据</AsyncButton>}
+                    </div>
+                  )}
                 </td>
                 <td><Pill tone={`source-${binding.source}`}>{DATA_SOURCE_LABEL[binding.source]}</Pill></td>
                 <td className="muted small">{binding.reason}</td>
@@ -97,9 +105,11 @@ export function PlansPage({ projectId, caseId, go }: { projectId: string, caseId
   const [editedData, setEditedData] = useState<DataBinding[]>()
   const [highlighted, setHighlighted] = useState<string[]>([])
 
-  useEffect(() => {
+  const loadCases = useCallback(() => {
     void api<TestCase[]>(`/api/cases?projectId=${projectId}`).then(setCases)
   }, [projectId])
+  useEffect(loadCases, [loadCases])
+  useReload(['case'], loadCases)
   const testCase = cases.find((c) => c.id === caseId)
 
   // 加载只取数据；状态在异步回调里设置（effect 内不同步 setState）
@@ -184,7 +194,17 @@ export function PlansPage({ projectId, caseId, go }: { projectId: string, caseId
                       </div>
                       <StepTable steps={steps} sentences={sentences} editable={editable} onChange={setEdited} showStage highlighted={highlighted} />
                       <PlanDecisions decisions={plan.decisions ?? []} highlighted={highlighted} onSelect={setHighlighted} />
-                      <PlanData data={data} caseData={testCase.data} editable={editable} onChange={setEditedData} />
+                      <PlanData
+                        data={data}
+                        caseData={testCase.data}
+                        editable={editable}
+                        onChange={setEditedData}
+                        onClearCaseData={async (key) => {
+                          const { [key]: _removed, ...rest } = testCase.data
+                          await api(`/api/cases/${testCase.id}`, { method: 'PUT', body: { data: rest } })
+                          loadCases()
+                        }}
+                      />
                       {editable && (
                         <div className="actions">
                           <button className="ghost" onClick={() => setEdited([...steps, { id: nextStepId(steps), action: 'click' }])}>＋ 添加步骤</button>

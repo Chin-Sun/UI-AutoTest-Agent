@@ -4,9 +4,9 @@
  */
 import { z } from 'zod'
 import {
-  DataBindingSchema, DecisionSchema, SEVERITIES, StepSchema, VERDICTS, validateFinding, validatePlanData, validatePlanSteps,
-  type DataBinding, type Decision, type Feedback, type Finding, type PlanDataContext, type Project, type Step, type StepResult,
-  type TestCase,
+  DataBindingSchema, DecisionSchema, SEVERITIES, StepSchema, VERDICTS, validateFinding, validatePlanData, validatePlanFlows, validatePlanSteps,
+  type DataBinding, type Decision, type Feedback, type Finding, type FlowSpec, type PlanDataContext, type Project, type Step,
+  type StepResult, type TestCase,
 } from '@uta/core'
 import type { ImageInput, LlmAdapter } from './llm/types'
 import { runAgent, type AgentEvent, type AgentRunResult, type AgentTool } from './loop'
@@ -93,8 +93,8 @@ export interface CompiledPlan {
   rationale?: string
 }
 
-function dataContext(testCase: TestCase, project: Project): PlanDataContext {
-  return { caseDataKeys: Object.keys(testCase.data), catalogKeys: project.testData.map((entry) => entry.key) }
+function dataContext(testCase: TestCase, project: Project, flows: readonly FlowSpec[]): PlanDataContext {
+  return { caseDataKeys: Object.keys(testCase.data), catalogKeys: project.testData.map((entry) => entry.key), flows }
 }
 
 export class AgentServices {
@@ -189,6 +189,25 @@ export class AgentServices {
     }
   }
 
+  /** 项目流程积木与登录会话说明 */
+  private flowsTool(project: Project, flows: readonly FlowSpec[]): AgentTool {
+    return {
+      spec: { name: 'list_flows', description: '查看项目的流程积木（到达页面、准备前置对象等可复用步骤）与登录会话配置', inputSchema: { type: 'object', properties: {} } },
+      run: async () => {
+        const roles = Object.keys(project.login?.accounts ?? {})
+        const session = project.login === undefined
+          ? '本项目没有配置登录。'
+          : `本项目已配置登录：执行前自动复用或建立会话（角色：${roles.length === 0 ? '未配置' : roles.join('、')}），计划里不要写登录步骤。`
+        if (flows.length === 0) return `${session}\n本项目没有流程积木。`
+        return [
+          session,
+          `流程积木 ${flows.length} 个。调用写法 {"action":"use","flow":"<id>","params":{…}}，输出在后续步骤里用 \${data.<key>} 引用：`,
+          ...flows.map((flow) => `- ${flow.id}：${flow.description}\n  参数：${JSON.stringify(flow.paramsSchema)}\n  输出：${flow.outputs.length === 0 ? '(无)' : flow.outputs.join(', ')}`),
+        ].join('\n')
+      },
+    }
+  }
+
   private planTool(context: PlanDataContext, base: Pick<CompiledPlan, 'data' | 'decisions'>, onAccept: (plan: CompiledPlan) => void): AgentTool {
     return {
       terminal: true,
@@ -205,7 +224,7 @@ export class AgentServices {
           decisions: proposal.decisions ?? base.decisions,
           ...(proposal.rationale === undefined ? {} : { rationale: proposal.rationale }),
         }
-        const problems = [...validatePlanSteps(plan.steps), ...validatePlanData(plan, context)]
+        const problems = [...validatePlanSteps(plan.steps), ...validatePlanFlows(plan.steps, context.flows as FlowSpec[] | undefined ?? []), ...validatePlanData(plan, context)]
         if (problems.length > 0) throw new Error(`计划未通过校验：\n${problems.join('\n')}`)
         onAccept(plan)
         return `计划已接受，共 ${plan.steps.length} 步、${plan.data.length} 项数据、${plan.decisions.length} 个决策点`
@@ -213,13 +232,18 @@ export class AgentServices {
     }
   }
 
-  /** @param options.source 用例在原始文件中的上下文（清单文件头、章节、相邻条目） */
-  async compile(testCase: TestCase, project: Project, options: { source?: unknown } = {}): Promise<AgentOutcome & CompiledPlan> {
+  /**
+   * @param options.source 用例在原始文件中的上下文（清单文件头、章节、相邻条目）
+   * @param options.flows 项目流程积木
+   */
+  async compile(testCase: TestCase, project: Project, options: { source?: unknown, flows?: readonly FlowSpec[] } = {}): Promise<AgentOutcome & CompiledPlan> {
+    const flows = options.flows ?? []
     let accepted: CompiledPlan | undefined
     const knowledge = project.knowledgeSkills.length === 0 ? '' : `\n本项目的领域知识 skill：${project.knowledgeSkills.join('、')}（请一并加载）`
     const catalog = project.testData.length === 0 ? '' : `\n本项目有测试数据目录（${project.testData.length} 条），用 list_test_data 查看`
+    const flowHint = flows.length === 0 && project.login === undefined ? '' : '\n本项目有流程积木或登录会话配置，用 list_flows 查看；准备阶段优先用积木到达页面，不要写登录步骤'
     const result = await this.run('compiler', `compile:${testCase.id}`, {
-      context: `被测项目：${project.name}，baseURL=${project.baseURL}${knowledge}${catalog}`,
+      context: `被测项目：${project.name}，baseURL=${project.baseURL}${knowledge}${catalog}${flowHint}`,
       instruction: '请把下面的测试用例编译成分阶段流程，并调用 propose_plan 提交。用例可能只有一句话、不是规范句式：按 case-to-flow 推断被测行为、前置条件与测试数据，信息不足时写明假设继续编译，不要放弃。source（如有）是用例在原始文件中的上下文。',
       payload: {
         case: {
@@ -228,7 +252,11 @@ export class AgentServices {
         },
         ...(options.source === undefined ? {} : { source: options.source }),
       },
-      tools: [this.testDataTool(project), this.planTool(dataContext(testCase, project), { data: [], decisions: [] }, (plan) => { accepted = plan })],
+      tools: [
+        this.testDataTool(project),
+        this.flowsTool(project, flows),
+        this.planTool(dataContext(testCase, project, flows), { data: [], decisions: [] }, (plan) => { accepted = plan }),
+      ],
       projectId: project.id,
     })
     if (accepted === undefined) throw new AgentFailure(result.text || '编译 Agent 没有提交计划', result.transcript)
@@ -279,6 +307,7 @@ export class AgentServices {
   async repair(input: {
     testCase: TestCase
     project: Project
+    flows?: readonly FlowSpec[]
     steps: readonly Step[]
     data?: readonly DataBinding[]
     decisions?: readonly Decision[]
@@ -297,7 +326,11 @@ export class AgentServices {
         finding: { stepId: input.finding.stepId, verdict: input.finding.verdict, summary: input.finding.summary, suggestion: input.finding.suggestion },
         feedback: { kind: input.feedback.kind, content: input.feedback.content, stepPatches: input.feedback.stepPatches },
       },
-      tools: [this.testDataTool(input.project), this.planTool(dataContext(input.testCase, input.project), base, (plan) => { accepted = plan })],
+      tools: [
+        this.testDataTool(input.project),
+        this.flowsTool(input.project, input.flows ?? []),
+        this.planTool(dataContext(input.testCase, input.project, input.flows ?? []), base, (plan) => { accepted = plan }),
+      ],
       projectId: input.project.id,
     })
     if (accepted === undefined) throw new AgentFailure(result.text || '修正 Agent 没有提交计划', result.transcript)

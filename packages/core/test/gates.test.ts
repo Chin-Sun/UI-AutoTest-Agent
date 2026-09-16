@@ -2,11 +2,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyFeedback, applyStepPatches, assertAttempt, assertRunTransition, bindingKeys, canPass, canPublishReport,
-  declareMissingBindings, DEFAULT_POLICY, expandTemplate, FEEDBACK_KINDS, FINDING_STATUSES, GateError, heuristicVerdict,
+  declareMissingBindings, DEFAULT_POLICY, expandTemplate, FEEDBACK_KINDS, FINDING_STATUSES, flowOutputs, GateError, heuristicVerdict,
   initialFindingStatus, isAssertion, missingBindings, needsHumanApproval, OPEN_FINDING_STATUSES, planNeedsHumanApproval,
   resolveBindings, resolvePlanData, RUN_STATUSES, RUN_TRANSITIONS, shouldAutoRetryFlaky, shouldEscalate, stepProblems,
-  TERMINAL_RUN_STATUSES, validateFinding, validatePlanData, validatePlanSteps,
-  type DataBinding, type Decision, type FeedbackKind, type FindingStatus, type Step,
+  TERMINAL_RUN_STATUSES, validateFinding, validatePlanData, validatePlanFlows, validatePlanSteps,
+  type DataBinding, type Decision, type FeedbackKind, type FindingStatus, type FlowSpec, type Step,
 } from '../src'
 
 const login: Step[] = [
@@ -67,6 +67,7 @@ describe('步骤校验', () => {
     assertUrl: { id: 'x', action: 'assertUrl', expect: '/a' },
     assertCount: { id: 'x', action: 'assertCount', target: { css: 'li' }, expect: '2' },
     screenshot: { id: 'x', action: 'screenshot' },
+    use: { id: 'x', action: 'use', flow: 'demo.find' },
   }
 
   it.each(Object.entries(valid))('%s 的最小合法步骤无问题', (_, step) => {
@@ -81,6 +82,8 @@ describe('步骤校验', () => {
     [{ id: 'x', action: 'assertUrl' }, '需要 expect'],
     [{ id: 'x', action: 'assertCount', target: { css: 'li' }, expect: '两个' }, '必须是整数'],
     [{ id: 'x', action: 'waitFor', value: 'soon' }, '毫秒数'],
+    [{ id: 'x', action: 'use' }, '需要 flow'],
+    [{ id: 'x', action: 'goto', value: 'a.html', target: { text: 'a' } }, '不能带 target'],
   ] as [Step, string][])('%j → %s', (step, message) => {
     expect(stepProblems(step).join()).toContain(message)
   })
@@ -182,6 +185,40 @@ describe('流程数据与决策点', () => {
   })
 })
 
+describe('流程积木', () => {
+  const specs: FlowSpec[] = [{
+    id: 'shop.find', description: '找订单', paramsSchema: {}, outputs: ['orderId'],
+    validate: (params) => ((params as { tool?: unknown }).tool === 'IAT' ? [] : ['tool 必须是 IAT']),
+  }]
+  const steps: Step[] = [
+    { id: 's1', action: 'use', flow: 'shop.find', params: { tool: 'IAT', note: ['${data.who}'] } },
+    { id: 's2', action: 'goto', value: 'orders/${data.orderId}' },
+    { id: 's3', action: 'assertUrl', expect: '${data.orderId}' },
+  ]
+
+  it('积木存在且参数合法才通过；不存在时列出可用积木', () => {
+    expect(validatePlanFlows(steps, specs)).toEqual([])
+    expect(validatePlanFlows([{ ...steps[0]!, params: { tool: 'X' } }], specs)).toEqual(['s1: 积木 shop.find 参数不合法：tool 必须是 IAT'])
+    expect(validatePlanFlows([{ ...steps[0]!, flow: 'shop.nope' }], specs).join()).toContain('可用：shop.find')
+    expect(validatePlanFlows([{ ...steps[0]!, flow: 'shop.nope' }], []).join()).toContain('本项目没有任何积木')
+  })
+
+  it('积木输出：调用之后引用视为已声明，之前引用报错；参数里的绑定同样检查', () => {
+    const context = { caseDataKeys: ['who'], catalogKeys: [], flows: specs }
+    expect(validatePlanData({ steps, data: [], decisions: [] }, context)).toEqual([])
+    expect(validatePlanData({ steps: [steps[1]!, steps[0]!], data: [], decisions: [] }, context)).toEqual(['s2: 在积木 shop.find 产出之前引用了 ${data.orderId}'])
+    expect(validatePlanData({ steps, data: [], decisions: [] }, { ...context, caseDataKeys: [] }).join()).toContain('未声明的数据 ${data.who}')
+  })
+
+  it('执行前缺数据检查与自动声明都跳过积木产出的 key', () => {
+    expect(flowOutputs(steps, specs)).toEqual(['orderId'])
+    expect(flowOutputs(steps, [])).toEqual([])
+    expect(missingBindings(steps, {})).toEqual(['who', 'orderId'])
+    expect(missingBindings(steps, { who: 'a' }, ['orderId'])).toEqual([])
+    expect(declareMissingBindings(steps, [], [], ['orderId']).map((binding) => binding.key)).toEqual(['who'])
+  })
+})
+
 describe('通过判定', () => {
   const passed = login.map((step) => ({ stepId: step.id, status: 'passed' as const, durationMs: 1 }))
   it('全部通过才通过，并给出原因', () => {
@@ -202,6 +239,8 @@ describe('规则归因', () => {
     [login[2], result('other', 'net::ERR_CONNECTION_RESET'), 'env-flaky'],
     [login[2], result('other', 'upstream 503'), 'env-flaky'],
     [login[3], result('assertion'), 'product-defect'],
+    [{ ...login[3]!, stage: 'verify' as const }, result('assertion'), 'product-defect'],
+    [{ ...login[3]!, stage: 'setup' as const }, result('assertion'), 'step-defect'],
     [login[2], result('locator'), 'step-defect'],
     [login[2], result('timeout'), 'step-defect'],
     [login[3], result('timeout'), 'step-defect'],

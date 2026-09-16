@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GateError, NotFoundError, type Finding, type Run, type TestCase } from '@uta/core'
+import { GateError, LoginConfigSchema, NotFoundError, type Finding, type Run, type TestCase } from '@uta/core'
 import { demoProject, failAt, makeHarness, passAll, REPO, until, type Harness } from './support'
 
 let h: Harness
@@ -106,7 +106,7 @@ describe('计划', () => {
     expect(compile.mock.calls[0]![2]).toMatchObject({ source: { section: 'A. 节点类型与内置节点', siblings: ['02-A2 「标注」节点不可删除'] } })
     const plain = await h.pipeline.createCase({ projectId: 'demo', title: '手写', steps: ['打开「a.html」'], expected: ['页面显示「a」'] })
     await h.pipeline.compile(plain.id)
-    expect(compile.mock.calls[1]![2]).toEqual({})
+    expect(compile.mock.calls[1]![2]).toEqual({ flows: [] })
   })
 
   it('草稿数据：人新引用的数据自动声明为待补充；目录里没有的引用被拒绝', async () => {
@@ -166,6 +166,26 @@ describe('执行', () => {
     expect(run!.status).toBe('passed')
     expect(h.runner.calls[0]!.data).toMatchObject({ vipCode: 'VIP-2026', runName: expect.stringMatching(new RegExp(`^uta-${vip.id}-[0-9a-z]+$`)) as string })
     expect(h.logs().some((line) => line.startsWith('本次生成的数据：runName=uta-'))).toBe(true)
+  })
+
+  it('项目配置了 login：执行器收到会话、积木、状态与超时；缺账号时建议文案直接给出要补的变量', async () => {
+    const login = LoginConfigSchema.parse({ url: '/login', accounts: { admin: { configured: false, passwordVar: 'DEMO_PASS' } } })
+    const message = '登录会话失败：缺少 admin 的登录账号：请在 .env 中填写 DEMO_PASS'
+    const { byTitle } = await seeded({
+      projects: [demoProject({ login, navigationTimeoutMs: 999, localStorage: { LOCALE: 'zh-CN' } })],
+      behavior: (options) => failAt(options, options.steps[0]!.id, { error: { kind: 'missing-data', message } }),
+    })
+    const id = byTitle('登录').id
+    await approved(id)
+    await h.pipeline.enqueue([id], { headed: false, obs: false })
+    const finding = await findingWith(id, () => true)
+    expect(h.runner.calls[0]).toMatchObject({
+      navigationTimeoutMs: 999, localStorage: { LOCALE: 'zh-CN' }, flows: [],
+      session: { role: 'admin', missingVars: ['login.accounts.admin'], authFile: join(h.dataRoot, 'auth', 'demo', 'admin.json') },
+    })
+    expect(h.runner.calls[0]!.session?.account).toBeUndefined()
+    expect(h.runner.calls[0]!.storageState).toBeUndefined()
+    expect(finding).toMatchObject({ verdict: 'data-missing', missingKeys: ['auth:admin'], suggestion: message })
   })
 
   it('多条用例串行执行（同一时间只有一个 running）', async () => {

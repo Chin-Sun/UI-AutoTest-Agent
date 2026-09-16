@@ -17,6 +17,9 @@ importers:
       '@types/node':
         specifier: ^22.20.2
         version: 22.20.2
+      '@uta/flows':
+        specifier: workspace:*
+        version: link:packages/flows
       '@vitest/coverage-v8':
         specifier: ^5.0.0
         version: 5.0.0(vitest@5.0.0)
@@ -97,11 +100,26 @@ importers:
         specifier: ^4.6.1
         version: 4.6.1
 
+  packages/flows:
+    dependencies:
+      '@uta/core':
+        specifier: workspace:*
+        version: link:../core
+      playwright:
+        specifier: ^1.63.0
+        version: 1.63.0
+      zod:
+        specifier: ^4.6.1
+        version: 4.6.1
+
   packages/runner:
     dependencies:
       '@uta/core':
         specifier: workspace:*
         version: link:../core
+      '@uta/flows':
+        specifier: workspace:*
+        version: link:../flows
       playwright:
         specifier: ^1.63.0
         version: 1.63.0
@@ -120,6 +138,9 @@ importers:
       '@uta/core':
         specifier: workspace:*
         version: link:../core
+      '@uta/flows':
+        specifier: workspace:*
+        version: link:../flows
       '@uta/runner':
         specifier: workspace:*
         version: link:../runner

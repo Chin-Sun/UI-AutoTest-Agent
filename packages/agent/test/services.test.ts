@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { planNeedsHumanApproval, validatePlanSteps, type Finding, type Project, type Step, type TestCase } from '@uta/core'
+import { LoginConfigSchema, planNeedsHumanApproval, validatePlanSteps, type Finding, type FlowSpec, type Project, type Step, type TestCase } from '@uta/core'
 import {
   AgentFailure, AgentServices, ComponentRegistry, MockAdapter, ROLES,
   type AgentUsage, type ChatRequest, type ChatResponse, type LlmAdapter,
@@ -147,7 +147,40 @@ describe('compile', () => {
     expect(request.system).toContain('case-to-steps：')
     expect(request.system).toContain('case-to-flow：')
     expect(request.system).toContain('molar-platform（请一并加载）')
-    expect(request.tools.map((tool) => tool.name).sort()).toEqual(['list_components', 'list_test_data', 'load_skill', 'propose_plan'])
+    expect(request.tools.map((tool) => tool.name).sort()).toEqual(['list_components', 'list_flows', 'list_test_data', 'load_skill', 'propose_plan'])
+  })
+
+  it('list_flows 列出积木与登录会话；propose_plan 退回不存在的积木、非法参数和提前引用积木输出', async () => {
+    const flows: FlowSpec[] = [{
+      id: 'shop.openOrder', description: '打开订单页', paramsSchema: { type: 'object' }, outputs: ['orderId'],
+      validate: (params) => ((params as { id?: unknown }).id === undefined ? ['缺少 id'] : []),
+    }]
+    const loginProject: Project = { ...project, login: LoginConfigSchema.parse({ accounts: { admin: { configured: true } } }) }
+    const good: Step[] = [
+      { id: 's1', action: 'use', flow: 'shop.openOrder', params: { id: '1' } },
+      { id: 's2', action: 'assertText', target: { text: '订单' }, expect: '${data.orderId}' },
+    ]
+    const llm = scripted([
+      call('list_flows', {}),
+      call('propose_plan', { steps: [{ id: 's1', action: 'use', flow: 'shop.nope' }, good[1]] }),
+      call('propose_plan', { steps: [{ ...good[0], params: {} }, good[1]] }),
+      call('propose_plan', { steps: [good[1], good[0]] }),
+      call('propose_plan', { steps: good }),
+    ])
+    const out = await new AgentServices({ registry, llmFor: () => llm }).compile(testCase({}), loginProject, { flows })
+    expect(out.steps).toEqual(good)
+    const tools = out.transcript.filter((event) => event.type === 'tool')
+    expect(tools[0]!.output).toContain('计划里不要写登录步骤')
+    expect(tools[0]!.output).toContain('shop.openOrder：打开订单页')
+    expect(tools.slice(1).map((event) => event.isError)).toEqual([true, true, true, false])
+    expect(tools[1]!.output).toContain('项目没有积木 shop.nope')
+    expect(tools[2]!.output).toContain('缺少 id')
+    expect(tools[3]!.output).toContain('产出之前引用')
+    expect(llm.requests[0]!.system).toContain('list_flows 查看')
+
+    const bare = scripted([call('list_flows', {}), { text: '不做', stop: 'end', toolCalls: [] }])
+    const failure = await new AgentServices({ registry, llmFor: () => bare }).compile(testCase({}), project).catch((e: unknown) => e) as AgentFailure
+    expect(failure.transcript.find((event) => event.type === 'tool')!.output).toBe('本项目没有配置登录。\n本项目没有流程积木。')
   })
 })
 
@@ -158,6 +191,15 @@ describe('triage', () => {
     const out = await services.triage({ testCase: testCase({}), runId: 'r', steps, failedStepId: 's2', result: { stepId: 's2', status: 'failed', durationMs: 1, screenshot: 'e/1.png', error: { kind: 'locator', message: 'Timeout' }, ariaSnapshot: '- button "保存"' } })
     expect(out.verdict).toMatchObject({ verdict: 'step-defect' })
     expect(out.verdict.suggestion).toContain('「保存」')
+  })
+
+  it('准备阶段的可见性检查失败 → step-defect，摘要用定位文字而不是 expect 里的说明', async () => {
+    const setup: Step[] = [{ id: 's3', stage: 'setup', action: 'assertVisible', target: { role: 'button', name: '导入数据' }, expect: '确认当前账号可见导入入口' }]
+    const out = await services.triage({
+      testCase: testCase({}), runId: 'r', steps: setup, failedStepId: 's3',
+      result: { stepId: 's3', status: 'failed', durationMs: 1, screenshot: 'e/3.png', actual: '不可见或不存在', error: { kind: 'assertion', message: '元素不可见' }, ariaSnapshot: '- generic: 导入数据' },
+    })
+    expect(out.verdict).toMatchObject({ verdict: 'step-defect', summary: 's3 找不到「导入数据」' })
   })
 
   it('断言失败 → product-defect', async () => {

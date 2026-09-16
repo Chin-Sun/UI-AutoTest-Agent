@@ -12,15 +12,18 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import {
   applyFeedback, assertRunTransition, canPublishReport, DataBindingSchema, DecisionSchema, declareMissingBindings, DEFAULT_POLICY,
-  FEEDBACK_KINDS, FeedbackSchema, GateError, initialFindingStatus, missingBindings, newId, OPEN_FINDING_STATUSES,
-  planNeedsHumanApproval, resolvePlanData, shouldAutoRetryFlaky, shouldEscalate, StepSchema, validatePlanData, validatePlanSteps,
-  type Finding, type FindingStatus, type GatePolicy, type Project, type Report, type Run, type Step, type StepPlan,
+  FEEDBACK_KINDS, FeedbackSchema, flowOutputs, GateError, initialFindingStatus, missingBindings, newId, OPEN_FINDING_STATUSES,
+  planNeedsHumanApproval, resolvePlanData, shouldAutoRetryFlaky, shouldEscalate, StepSchema, validatePlanData, validatePlanFlows,
+  validatePlanSteps,
+  type Finding, type FindingStatus, type FlowSpec, type GatePolicy, type Project, type Report, type Run, type Step, type StepPlan,
   type StepResult, type Store, type TestCase, type Verdict,
 } from '@uta/core'
 import { AgentFailure, heuristicTriage, type AgentEvent, type AgentServices, type ComponentRegistry, type TriageOutput } from '@uta/agent'
-import { runPlan, type RunPlanResult } from '@uta/runner'
+import { fileState, toFlowSpec, type FlowDefinition } from '@uta/flows'
+import { runPlan, type RunPlanResult, type RunSession } from '@uta/runner'
 import type { Bus } from './bus'
 import { checklistContext, type ChecklistContext } from './importers'
+import { projectSecrets } from './projects'
 import { renderReport, type ReportRow } from './report'
 
 export const CaseInputSchema = z.object({
@@ -74,6 +77,8 @@ export interface PipelineDeps {
   policy?: GatePolicy
   /** 执行器；测试可注入假实现，不启动浏览器 */
   runPlan?: typeof runPlan
+  /** 各项目的流程积木（projects/<id>/flows） */
+  flows?: Map<string, FlowDefinition[]>
 }
 
 export class Pipeline {
@@ -97,6 +102,36 @@ export class Pipeline {
 
   log(scope: string, message: string): void {
     this.deps.bus.emit({ type: 'log', scope, message, ts: Date.now() })
+  }
+
+  private readonly specCache = new Map<string, FlowSpec[]>()
+
+  /** 项目积木的对外描述：供计划校验、AI 选择与前端展示 */
+  flowSpecs(projectId: string): FlowSpec[] {
+    let specs = this.specCache.get(projectId)
+    if (specs === undefined) {
+      specs = (this.deps.flows?.get(projectId) ?? []).map((flow) => toFlowSpec(flow))
+      this.specCache.set(projectId, specs)
+    }
+    return specs
+  }
+
+  /** 登录角色：计划指定 > login.defaultRole > 第一个账号 > 旧的 defaultAuthRole */
+  private roleFor(plan: StepPlan, project: Project): string | undefined {
+    return plan.authRole ?? project.login?.defaultRole ?? Object.keys(project.login?.accounts ?? {})[0] ?? project.defaultAuthRole
+  }
+
+  private sessionFor(project: Project, role: string | undefined): RunSession | undefined {
+    if (project.login === undefined) return undefined
+    const name = role ?? 'default'
+    const secret = projectSecrets(project)?.accounts[name]
+    return {
+      config: project.login,
+      role: name,
+      ...(secret?.account === undefined ? {} : { account: secret.account }),
+      missingVars: secret?.missingVars ?? [`login.accounts.${name}`],
+      authFile: join(this.deps.dataRoot, 'auth', project.id, `${name}.json`),
+    }
   }
 
   private async saveTranscript(name: string, transcript: AgentEvent[]): Promise<void> {
@@ -190,7 +225,7 @@ export class Pipeline {
     this.log(scope, `开始编译「${testCase.title}」`)
     try {
       const source = await this.sourceContext(testCase, project)
-      const out = await this.deps.agents.compile(testCase, project, source === undefined ? {} : { source })
+      const out = await this.deps.agents.compile(testCase, project, { flows: this.flowSpecs(project.id), ...(source === undefined ? {} : { source }) })
       await this.saveTranscript(`compile-${caseId}-${Date.now()}`, out.transcript)
       this.log(scope, `编译完成：${out.steps.length} 步、${out.data.length} 项数据、${out.decisions.length} 个决策点（${out.model}）`)
       return await this.putDraft(caseId, {
@@ -217,15 +252,17 @@ export class Pipeline {
     const current = await this.store.plans.require(planId)
     const testCase = await this.store.cases.require(current.caseId)
     const project = this.project(testCase.projectId)
+    const flows = this.flowSpecs(project.id)
     const caseDataKeys = Object.keys(testCase.data)
-    const data = declareMissingBindings(parsed, extra.data === undefined ? current.data : z.array(DataBindingSchema).parse(extra.data), caseDataKeys)
+    const data = declareMissingBindings(parsed, extra.data === undefined ? current.data : z.array(DataBindingSchema).parse(extra.data), caseDataKeys, flowOutputs(parsed, flows))
     const stepIds = new Set(parsed.map((step) => step.id))
     const decisions = extra.decisions === undefined
       ? current.decisions.map((decision) => ({ ...decision, stepIds: decision.stepIds.filter((id) => stepIds.has(id)) }))
       : z.array(DecisionSchema).parse(extra.decisions)
     const problems = [
       ...validatePlanSteps(parsed),
-      ...validatePlanData({ steps: parsed, data, decisions }, { caseDataKeys, catalogKeys: project.testData.map((entry) => entry.key) }),
+      ...validatePlanFlows(parsed, flows),
+      ...validatePlanData({ steps: parsed, data, decisions }, { caseDataKeys, catalogKeys: project.testData.map((entry) => entry.key), flows }),
     ]
     if (problems.length > 0) throw new GateError(`计划未通过校验：${problems.join('；')}`)
     const plan = await this.store.plans.update(planId, (doc) => {
@@ -347,8 +384,10 @@ export class Pipeline {
     if (run.options.obs && !obs) this.log(scope, 'obs-recorder 组件未启用或未连接，跳过 OBS 录制')
     if (obs) await this.deps.registry.callMcp('obs-recorder', 'start_record', {}).then((m) => this.log(scope, `OBS：${m}`), (e: Error) => this.log(scope, `OBS 开始录制失败：${e.message}`))
 
-    const role = plan.authRole ?? project.defaultAuthRole
-    const storageState = role === undefined ? undefined : project.authRoles[role]
+    const role = this.roleFor(plan, project)
+    // 配置了 login 时由执行器自动复用 / 建立会话；否则沿用项目提供的 storageState 文件
+    const storageState = project.login === undefined && role !== undefined ? project.authRoles[role] : undefined
+    const session = this.sessionFor(project, role)
     let result: RunPlanResult
     if (storageState !== undefined && !existsSync(storageState)) {
       const step = plan.steps[0]!
@@ -362,6 +401,12 @@ export class Pipeline {
         data,
         baseURL: project.baseURL,
         ...(storageState === undefined ? {} : { storageState }),
+        ...(session === undefined ? {} : { session }),
+        flows: this.deps.flows?.get(project.id) ?? [],
+        catalog: project.testData,
+        state: fileState(join(this.deps.dataRoot, 'state', `${project.id}.json`)),
+        ...(project.navigationTimeoutMs === undefined ? {} : { navigationTimeoutMs: project.navigationTimeoutMs }),
+        ...(project.localStorage === undefined ? {} : { localStorage: project.localStorage }),
         headed: run.options.headed,
         slowMo: project.slowMo,
         viewport: project.viewport,
@@ -422,16 +467,15 @@ export class Pipeline {
       return { output: { verdict: 'env-flaky', severity: 'low', summary: run.error ?? '执行器异常，未产生步骤结果' }, by: 'rule' }
     }
     if (failed.error?.kind === 'missing-data') {
-      const keys = missingBindings(plan.steps, this.runData(plan, testCase, this.project(run.projectId)))
-      const missingKeys = keys.length > 0 ? keys : [`auth:${plan.authRole ?? 'default'}`]
-      return {
-        failed,
-        by: 'rule',
-        output: {
-          verdict: 'data-missing', severity: 'medium', summary: failed.error.message, missingKeys,
-          suggestion: keys.length > 0 ? `请补充：${keys.map((key) => `${key}=…`).join('、')}` : '登录态文件不存在：请先在被测工程生成 storageState（molardata-e2e：npm run auth:all）',
-        },
-      }
+      const project = this.project(run.projectId)
+      const keys = missingBindings(plan.steps, this.runData(plan, testCase, project), flowOutputs(plan.steps, this.flowSpecs(project.id)))
+      const missingKeys = keys.length > 0 ? keys : [`auth:${this.roleFor(plan, project) ?? 'default'}`]
+      const suggestion = keys.length > 0
+        ? `请补充：${keys.map((key) => `${key}=…`).join('、')}`
+        : failed.error.message.startsWith('缺少登录态')
+          ? '登录态文件不存在：请先在被测工程生成 storageState，或在 project.yaml 配置 login 让平台自动登录'
+          : failed.error.message
+      return { failed, by: 'rule', output: { verdict: 'data-missing', severity: 'medium', summary: failed.error.message, missingKeys, suggestion } }
     }
     let screenshot: { mediaType: 'image/png', base64: string } | undefined
     if (failed.screenshot !== undefined) {
@@ -524,8 +568,9 @@ export class Pipeline {
       const base = await this.latestApproved(finding.caseId) ?? await this.store.plans.require(finding.planId)
       const testCase = await this.store.cases.require(finding.caseId)
       this.log(scope, '修正 Agent 开始根据反馈修改计划')
+      const project = this.project(testCase.projectId)
       const out = await this.deps.agents.repair({
-        testCase, project: this.project(testCase.projectId), steps: base.steps, data: base.data, decisions: base.decisions, finding, feedback,
+        testCase, project, flows: this.flowSpecs(project.id), steps: base.steps, data: base.data, decisions: base.decisions, finding, feedback,
       })
       await this.saveTranscript(`repair-${finding.id}-${Date.now()}`, out.transcript)
       const draft = await this.putDraft(finding.caseId, {

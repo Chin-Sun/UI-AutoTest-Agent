@@ -5,7 +5,7 @@
  * 状态转换，而不是只写进 prompt；终态只读，修正生成新版本而不是复活旧对象。
  */
 import type {
-  DataBinding, Feedback, FeedbackKind, Finding, FindingStatus, GatePolicy, Run, RunStatus, Step, StepPlan,
+  DataBinding, Feedback, FeedbackKind, Finding, FindingStatus, FlowSpec, GatePolicy, Run, RunStatus, Step, StepPlan,
   StepResult, TestDataEntry, Verdict,
 } from './types'
 
@@ -63,7 +63,34 @@ export function stepProblems(step: Step): string[] {
   if (NEEDS_EXPECT.has(step.action) && (step.expect === undefined || step.expect === '')) problems.push(`${step.id}: ${step.action} 需要 expect`)
   if (step.action === 'assertCount' && step.expect !== undefined && !/^\d+$/.test(step.expect)) problems.push(`${step.id}: assertCount 的 expect 必须是整数`)
   if (step.action === 'waitFor' && step.target === undefined && !/^\d+$/.test(step.value ?? '')) problems.push(`${step.id}: waitFor 需要 target 或毫秒数 value`)
+  if (step.action === 'goto' && step.target !== undefined) problems.push(`${step.id}: goto 不能带 target（打开页面只需要 value）`)
+  if (step.action === 'use' && (step.flow === undefined || step.flow === '')) problems.push(`${step.id}: use 需要 flow（积木 id）`)
   return problems
+}
+
+/** 计划里的积木调用：积木必须存在，参数通过积木的校验 */
+export function validatePlanFlows(steps: readonly Step[], flows: readonly FlowSpec[]): string[] {
+  const problems: string[] = []
+  for (const step of steps) {
+    if (step.action !== 'use' || step.flow === undefined) continue
+    const flow = flows.find((candidate) => candidate.id === step.flow)
+    if (flow === undefined) {
+      problems.push(`${step.id}: 项目没有积木 ${step.flow}${flows.length === 0 ? '（本项目没有任何积木）' : `，可用：${flows.map((candidate) => candidate.id).join('、')}`}`)
+      continue
+    }
+    for (const problem of flow.validate(step.params ?? {})) problems.push(`${step.id}: 积木 ${flow.id} 参数不合法：${problem}`)
+  }
+  return problems
+}
+
+/** 计划中所有积木调用会产出的数据 key */
+export function flowOutputs(steps: readonly Step[], flows: readonly Pick<FlowSpec, 'id' | 'outputs'>[]): string[] {
+  const keys = new Set<string>()
+  for (const step of steps) {
+    if (step.action !== 'use') continue
+    for (const key of flows.find((flow) => flow.id === step.flow)?.outputs ?? []) keys.add(key)
+  }
+  return [...keys]
 }
 
 export function validatePlanSteps(steps: readonly Step[]): string[] {
@@ -88,18 +115,28 @@ export function bindingKeys(text: string | undefined): string[] {
   return [...text.matchAll(BINDING)].map((match) => match[1]!)
 }
 
-function stepStrings(step: Step): string[] {
-  const target = step.target === undefined ? [] : Object.values(step.target).filter((v): v is string => typeof v === 'string')
-  return [step.value ?? '', step.expect ?? '', ...target]
+function nestedStrings(value: unknown): string[] {
+  if (typeof value === 'string') return [value]
+  if (Array.isArray(value)) return value.flatMap(nestedStrings)
+  if (typeof value === 'object' && value !== null) return Object.values(value).flatMap(nestedStrings)
+  return []
 }
 
-/** 执行前检查：Plan 引用了但用例数据里没有的 key。非空即直接判 data-missing，不浪费一次执行 */
-export function missingBindings(steps: readonly Step[], data: Readonly<Record<string, string>>): string[] {
+function stepStrings(step: Step): string[] {
+  const target = step.target === undefined ? [] : Object.values(step.target).filter((v): v is string => typeof v === 'string')
+  return [step.value ?? '', step.expect ?? '', ...target, ...nestedStrings(step.params)]
+}
+
+/**
+ * 执行前检查：Plan 引用了但用例数据里没有的 key。非空即直接判 data-missing，不浪费一次执行。
+ * @param produced 积木执行时才产出的 key，不算缺失
+ */
+export function missingBindings(steps: readonly Step[], data: Readonly<Record<string, string>>, produced: readonly string[] = []): string[] {
   const missing = new Set<string>()
   for (const step of steps) {
     for (const text of stepStrings(step)) {
       for (const key of bindingKeys(text)) {
-        if (data[key] === undefined || data[key] === '') missing.add(key)
+        if ((data[key] === undefined || data[key] === '') && !produced.includes(key)) missing.add(key)
       }
     }
   }
@@ -121,6 +158,8 @@ export interface PlanDataContext {
   caseDataKeys: readonly string[]
   /** 项目测试数据目录的条目 key */
   catalogKeys: readonly string[]
+  /** 项目积木：其输出从调用步骤之后视为已声明 */
+  flows?: readonly Pick<FlowSpec, 'id' | 'outputs'>[]
 }
 
 /** 计划的数据声明与决策点是否自洽；步骤引用的每个 ${data.key} 都必须有来源 */
@@ -139,13 +178,27 @@ export function validatePlanData(plan: Pick<StepPlan, 'steps' | 'data' | 'decisi
     }
   }
   const known = new Set([...declared, ...context.caseDataKeys])
-  const undeclared = new Set<string>()
-  for (const step of plan.steps) {
-    for (const text of stepStrings(step)) {
-      for (const key of bindingKeys(text)) if (!known.has(key)) undeclared.add(key)
+  const producer = new Map<string, { index: number, flow: string }>()
+  plan.steps.forEach((step, index) => {
+    if (step.action !== 'use' || step.flow === undefined) return
+    for (const key of context.flows?.find((flow) => flow.id === step.flow)?.outputs ?? []) {
+      if (!producer.has(key)) producer.set(key, { index, flow: step.flow })
     }
-  }
+  })
+  const undeclared = new Set<string>()
+  const early = new Set<string>()
+  plan.steps.forEach((step, index) => {
+    for (const text of stepStrings(step)) {
+      for (const key of bindingKeys(text)) {
+        if (known.has(key)) continue
+        const source = producer.get(key)
+        if (source === undefined) undeclared.add(key)
+        else if (source.index >= index) early.add(`${step.id}: 在积木 ${source.flow} 产出之前引用了 \${data.${key}}`)
+      }
+    }
+  })
   for (const key of undeclared) problems.push(`步骤引用了未声明的数据 \${data.${key}}，请在 data 中声明它的来源`)
+  problems.push(...early)
   const stepIds = new Set(plan.steps.map((step) => step.id))
   const decisionIds = new Set<string>()
   for (const decision of plan.decisions) {
@@ -161,8 +214,8 @@ export function validatePlanData(plan: Pick<StepPlan, 'steps' | 'data' | 'decisi
  * 步骤引用了但没有来源的 key 补声明为 human（人手改的步骤、规则引擎的输出走这里），
  * 执行前由门禁请人补充
  */
-export function declareMissingBindings(steps: readonly Step[], data: readonly DataBinding[], caseDataKeys: readonly string[]): DataBinding[] {
-  const known = new Set([...data.map((binding) => binding.key), ...caseDataKeys])
+export function declareMissingBindings(steps: readonly Step[], data: readonly DataBinding[], caseDataKeys: readonly string[], produced: readonly string[] = []): DataBinding[] {
+  const known = new Set([...data.map((binding) => binding.key), ...caseDataKeys, ...produced])
   const added: DataBinding[] = []
   for (const step of steps) {
     for (const text of stepStrings(step)) {
@@ -237,6 +290,10 @@ export function heuristicVerdict(step: Step | undefined, result: StepResult | un
     return { verdict: 'env-flaky', reason: `环境/网络异常：${message}` }
   }
   if (step !== undefined && isAssertion(step.action) && kind === 'assertion') {
+    // 准备 / 操作 / 决策阶段的断言是前置检查，没过说明步骤或定位不对，不是产品没达到用例预期
+    if (step.stage !== undefined && step.stage !== 'verify') {
+      return { verdict: 'step-defect', reason: `步骤 ${step.id} 是 ${step.stage} 阶段的前置检查，没有通过：${message}` }
+    }
     return { verdict: 'product-defect', reason: `断言不成立：期望 ${step.expect ?? '(可见)'}，实际 ${result?.actual ?? '(未知)'}` }
   }
   if (kind === 'locator' || kind === 'timeout') {

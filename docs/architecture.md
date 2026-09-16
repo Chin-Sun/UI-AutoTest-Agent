@@ -311,12 +311,39 @@ data/
 
 ## 十一、接入被测项目
 
-一个被测项目 = `projects/<id>/project.yaml`，支持 `${VAR}` 与 `${VAR:-默认值}`。
+一个被测项目 = `projects/<id>/project.yaml`，支持 `${VAR}`、`${VAR:-默认值}` 以及嵌套 `${A:-${B}}`。
+
+**最小接入**：新平台只需要一个 `project.yaml`，再在根目录 `.env` 里写上账号。
+
+```yaml
+# projects/shop/project.yaml
+id: shop
+name: 商城后台
+baseURL: https://admin.shop.com
+login:
+  url: /login
+  accounts:
+    admin:
+      username: ${SHOP_ADMIN_USERNAME}
+      password: ${SHOP_ADMIN_PASSWORD}
+```
+
+```text
+# .env（已被 .gitignore 忽略）
+SHOP_ADMIN_USERNAME=…
+SHOP_ADMIN_PASSWORD=…
+```
+
+**预期**：⑥组件中心的「被测项目：登录与流程积木」中，该项目的 admin 显示「已配置」。第一次执行时日志出现「会话：admin 重新登录成功，登录态已保存」，之后显示「会话：复用 admin 的登录态」。
 
 | 字段 | 说明 |
 | --- | --- |
 | `baseURL` | 被测站点地址，`goto` 使用相对路径 |
-| `authRoles` | 角色 → Playwright storageState 路径；计划的 `authRole` 决定用哪个登录态 |
+| `login` | 通用表单登录配置（见下表）；配置后执行前自动复用或建立会话，登录态保存在 `data/auth/<id>/<角色>.json` |
+| `navigationTimeoutMs` / `actionTimeoutMs` / `assertTimeoutMs` | 页面跳转 / 操作 / 断言超时，默认 30000 / 8000 / 5000 |
+| `localStorage` | 页面脚本执行前写入，如 `{ LOCALE: zh-CN }` 锁定界面语言 |
+| `authRoles` | 兼容旧方式：角色 → 外部生成的 storageState 文件；配置了 `login` 时不使用 |
+| `flows/index.ts`（同目录） | 项目流程积木，默认导出 `FlowDefinition[]`（见下文） |
 | `knowledgeSkills` | 编译时要求 Agent 加载的领域知识 Skill |
 | `importers.checklistDir` | 功能点清单目录，启用①的清单导入；编译时把条目所在的文件头、章节与同章节条目交给 compiler |
 | `envFile` | 额外的 `.env`，只用于展开本文件与 `test-data.yaml` 中的 `${VAR}`；非空的环境变量优先 |
@@ -324,12 +351,57 @@ data/
 
 **molardata 接入**（`projects/molardata/project.yaml`）：
 
-1. 在 `molardata-e2e` 执行 `npm run auth:all`，生成 `auth/*.json`；本平台直接引用，不复制凭据。
+1. 登录由 `login` 配置自动完成。账号优先读根目录 `.env` 的 `MOLAR_ADMIN_USERNAME / MOLAR_ADMIN_PASSWORD`，没有时回退到 molardata-e2e/.env 的 `ADMIN_USERNAME / ADMIN_PASSWORD`。协议勾选、「账号已在别处登录」弹窗、前置校验接口失败、`/login/group` 都写在配置里。
 2. 设置 `MOLAR_BASE_URL`（以及目录不在默认位置时的 `MOLAR_AUTOTEST_DIR`）。`TASK_ID_*` 从 `molardata-e2e/.env` 读取，展开到 `test-data.yaml` 的任务条目。
 3. 在①选择“MolarData 标注平台”，从 `testcases/0N-*.md` 勾选条目导入，`source` 记为 `molardata:02-A1`，与 molardata ledger 主键一致。
 4. 清单条目是功能点而非详细步骤，`config/llm.yaml` 已把 `compiler`、`repairer` 路由到 OpenAI 兼容的 `ppapi` provider，密钥写在仓库根目录的 `.env`（`PPAPI_API_KEY=…`，已 gitignore，服务启动时自动加载）；`mock` 规则引擎只理解用「」标注的规范句式。
 
-> ⚠️ 登录态文件缺失时，执行直接判为 `data-missing`，建议文案会提示先生成 storageState。
+> ⚠️ 会话建立失败时不执行用例步骤，按原因归类：
+>
+> - 账号变量没配、账号密码错误、账号没有空间：判为 `data-missing`，建议文案里写明要补哪个环境变量；
+> - 登录页打不开、前置接口失败：判为环境问题，自动重试一次。
+
+### 登录配置（`login`，平台无关，代码在 `packages/flows/src/login/`）
+
+| 字段 | 默认 | 说明 |
+| --- | --- | --- |
+| `url` | `/login` | 登录页，相对 baseURL |
+| `accounts.<角色>.username / password` | — | 写成 `${ENV}` 引用；真实值只留在服务端，API、前端、模型只看到变量名与「是否已配置」 |
+| `defaultRole` | 第一个账号 | 计划没有 `authRole` 时使用 |
+| `fields.username / password / submit` | 自动识别 | 自动识别顺序：可见密码框；`autocomplete=username` → `type=email` → 密码框前最近的文本框；`type=submit` → 名为「登录 / Log in / Sign in」的按钮 → 同名文字 → 回车 |
+| `beforeSubmit` / `afterSubmit` | `[]` | 声明式动作：`check: <复选框名称包含的文字>`、`clickIfAppears: <文字或选择器>`（可选弹窗，与登录结果竞速）、`click: <文字或选择器>` |
+| `success` | 离开登录页且无可见密码框 | 附加条件：`urlNotContains`、`localStorageKey`、`visible` |
+| `failures` | `[]` | `responseUrlContains + statusGte + message`：接口出错时报环境问题；`urlContains + message`：跳到某页时报账号问题 |
+| `check.url` | `/` | 复用登录态前用来验证的页面；登录后页面需稳定 1.5 秒才算有效 |
+
+声明式配置处理不了的登录方式（扫码、SSO 跳转等），可以在项目积木里自己实现。
+
+### 项目积木（`projects/<id>/flows/`，SDK 在 `packages/flows/src/sdk.ts`）
+
+```ts
+import { defineFlow, FlowError, z } from '@uta/flows'
+
+export const openOrder = defineFlow({
+  id: 'shop.openOrder',
+  description: '打开订单详情页并等待加载完成',
+  params: z.object({ orderId: z.string() }),
+  outputs: [],
+  async run(ctx, { orderId }) {
+    await ctx.page.goto(`/orders/${orderId}`)
+    if (!await ctx.page.getByText('订单详情').isVisible()) throw new FlowError('assertion', `订单 ${orderId} 不存在`)
+  },
+})
+```
+
+- **调用**：计划里写成 `{ "action": "use", "flow": "shop.openOrder", "params": { "orderId": "${data.orderId}" } }`；输出写回本次执行数据，后续步骤可引用。
+- **校验**：编译与保存草稿时检查积木是否存在、参数是否合法、输出是否在产出之后才被引用。
+- **`ctx` 提供**：`page`、`context`、`baseURL`、`data`、`catalog`（测试数据目录）、`state`（项目级持久键值 `data/state/<id>.json`，用来记住创建过的对象）、`timeouts`、`log`。
+- **`FlowError` 的 `kind` 决定门禁归因**：`env` 环境、`data-missing` 缺数据、`step` 步骤、`assertion` 前置条件不成立。
+
+MolarData 的积木：
+
+- `molar.ensureTask {tool, ref?} → taskId, taskName`：查找顺序为目录预定义 → 已记住 → 列表中的 `uta-auto-<工具>` → 新建；
+- `molar.openTaskPage {taskId, page}`：打开任务子页面并等待 task-info，白屏时重试一次。
 
 ## 十二、演进路线
 

@@ -2,10 +2,23 @@
 import { errors, type Page } from 'playwright'
 import { describe, expect, it } from 'vitest'
 import type { Step } from '@uta/core'
-import { classifyError, locate, matchesUrl } from '../src'
+import { FlowError } from '@uta/flows'
+import { classifyError, locate, matchesUrl, resolveParams, timeoutsOf } from '../src'
 
 const click: Step = { id: 's1', action: 'click', target: { text: 'x' } }
 const assertion: Step = { id: 's2', action: 'assertVisible', target: { text: 'x' } }
+
+describe('积木参数与超时', () => {
+  it('resolveParams 逐层解析字符串里的绑定，其他值原样保留', () => {
+    expect(resolveParams({ id: '${data.a}', list: ['x-${data.a}', 1], nested: { ok: true, none: null } }, { a: '7' }))
+      .toEqual({ id: '7', list: ['x-7', 1], nested: { ok: true, none: null } })
+  })
+
+  it('timeoutsOf 默认 8000 / 5000 / 30000', () => {
+    expect(timeoutsOf({})).toEqual({ action: 8_000, assert: 5_000, navigation: 30_000 })
+    expect(timeoutsOf({ actionTimeoutMs: 1, assertTimeoutMs: 2, navigationTimeoutMs: 3 })).toEqual({ action: 1, assert: 2, navigation: 3 })
+  })
+})
 
 describe('classifyError', () => {
   it.each([
@@ -16,6 +29,12 @@ describe('classifyError', () => {
     [click, new Error('NS_ERROR_CONNECTION_REFUSED'), 'navigation'],
     [click, new Error('Target page, context or browser has been closed'), 'other'],
     [click, '字符串错误', 'other'],
+    [{ id: 'g', action: 'goto', value: 'x' }, new errors.TimeoutError('page.goto: Timeout 8000ms exceeded'), 'navigation'],
+    [click, new errors.TimeoutError('page.waitForURL: Timeout 30000ms exceeded'), 'navigation'],
+    [click, new FlowError('env', '打不开'), 'navigation'],
+    [click, new FlowError('data-missing', '缺账号'), 'missing-data'],
+    [click, new FlowError('step', '页面结构不对'), 'locator'],
+    [click, new FlowError('assertion', '任务不存在'), 'assertion'],
   ] as [Step, unknown, string][])('%#: → %s', (step, error, kind) => {
     expect(classifyError(step, error).kind).toBe(kind)
   })

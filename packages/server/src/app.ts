@@ -72,6 +72,11 @@ export async function buildApp(ctx: AppContext): Promise<FastifyInstance> {
     queue: pipeline.queueState(),
   }))
   app.get('/api/projects', async () => [...ctx.projects.values()])
+  app.get('/api/projects/:id/flows', async (request) => {
+    const id = (request.params as Params)['id']!
+    pipeline.project(id)
+    return pipeline.flowSpecs(id).map(({ validate: _validate, ...spec }) => spec)
+  })
 
   // ---------- 用例 ----------
   app.get('/api/cases', async (request) => {

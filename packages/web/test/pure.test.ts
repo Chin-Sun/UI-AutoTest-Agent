@@ -6,7 +6,7 @@ import {
   ACTION_LABEL, DATA_SOURCE_LABEL, FINDING_STATUS_LABEL, PLAN_STATUS_LABEL, RUN_STATUS_LABEL, STAGE_LABEL, targetLabel, time, TRIGGER_LABEL,
   VERDICT_LABEL,
 } from '../src/labels'
-import { FLOW_STAGES, nextStepId, STEP_ACTIONS } from '../src/steps'
+import { FLOW_STAGES, formatParams, nextStepId, parseParams, STEP_ACTIONS } from '../src/steps'
 
 describe('format', () => {
   it('lines 去掉空行与首尾空白', () => {
@@ -73,6 +73,17 @@ describe('targetLabel / time / nextStepId', () => {
   it('time 对 undefined 返回空串', () => {
     expect(time(undefined)).toBe('')
     expect(time(0)).toMatch(/1970/)
+  })
+
+  it('积木参数：展示为 JSON；解析只接受 JSON 对象，空白视为空对象', () => {
+    expect(formatParams(undefined)).toBe('')
+    expect(formatParams({})).toBe('')
+    expect(formatParams({ tool: 'IAT' })).toBe('{"tool":"IAT"}')
+    expect(parseParams(' ')).toEqual({})
+    expect(parseParams('{"page":"io"}')).toEqual({ page: 'io' })
+    expect(parseParams('[1]')).toBeUndefined()
+    expect(parseParams('null')).toBeUndefined()
+    expect(parseParams('{坏')).toBeUndefined()
   })
 
   it('nextStepId 取 sN 最大值 +1，忽略非 sN 的 id', () => {

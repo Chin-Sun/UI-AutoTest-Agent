@@ -1,19 +1,56 @@
 # MolarData 标注平台（第一个真实被测项目）。
-# 凭据与登录态不复制进本仓库：直接引用 molardata-e2e 生成的 storageState。
-# 先在 molardata-e2e 里执行 `npm run auth:all` 生成 auth/*.json。
+#
+# 登录：执行前自动复用 / 建立会话，登录态保存在 data/auth/molardata/，计划里不写登录步骤。
+# 账号：优先读根目录 .env 的 MOLAR_ADMIN_USERNAME / MOLAR_ADMIN_PASSWORD，
+#       没有时回退到 envFile（molardata-e2e/.env）的 ADMIN_USERNAME / ADMIN_PASSWORD。
+# 业务积木（找 / 建任务、打开任务页）在 flows/。
 id: molardata
 name: MolarData 标注平台
 baseURL: ${MOLAR_BASE_URL:-https://molardata.invalid}
-authRoles:
-  admin: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/admin.json
-  annotator: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/annotator.json
-  reviewer: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/auth/reviewer.json
-defaultAuthRole: admin
 slowMo: 300
 viewport: { width: 1600, height: 900 }
+actionTimeoutMs: 15000
+navigationTimeoutMs: 45000
+# 锁定中文界面，否则账号的语言偏好会让文案定位失效
+localStorage:
+  LOCALE: zh-CN
 knowledgeSkills: [molar-platform]
-# 读取 molardata-e2e 的 .env（TASK_ID_* 等），只用于展开本文件与 test-data.yaml 里的 ${VAR}
+# 读取 molardata-e2e 的 .env（TASK_ID_* 与 ADMIN_* 等），只用于展开本文件与 test-data.yaml 里的 ${VAR}
 envFile: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/molardata-e2e/.env
+
+login:
+  url: /login
+  accounts:
+    admin:
+      username: ${MOLAR_ADMIN_USERNAME:-${ADMIN_USERNAME}}
+      password: ${MOLAR_ADMIN_PASSWORD:-${ADMIN_PASSWORD}}
+  # 双轨选择器：testid 优先、旧 CSS 兜底（来源 molardata-e2e utils/selectors.ts）
+  fields:
+    username: '[data-testid="login-username-input"], input[autocomplete="username"]'
+    password: '[data-testid="login-password-input"], input[autocomplete="current-password"]'
+    # 登录按钮是 div.button，没有 button 语义
+    submit: '[data-testid="login-submit-btn"], .login-account-wrap .bottom-wrap .btn-wrap .button'
+  beforeSubmit:
+    # 未勾选协议时点登录只弹 toast、不发请求
+    - check: 用户协议
+  afterSubmit:
+    # 自动化账号常被复用，会弹「账号已在别处登录」确认框（LoggedHint.vue）
+    - clickIfAppears: '.pop-container .footer .button:not(.second)'
+  success:
+    urlNotContains: /login
+    localStorageKey: TOKEN
+  failures:
+    - responseUrlContains: /auth-center/auth/validate-login-by-user-name
+      statusGte: 400
+      message: 登录前置校验接口失败（环境或后端问题，不是账号问题）
+    - responseUrlContains: /auth-center/auth/login
+      statusGte: 500
+      message: 登录接口服务端错误
+    - urlContains: /login/group
+      message: 登录后被重定向到 /login/group：账号未绑定空间或空间被冻结
+  check:
+    url: /dashboard
+
 importers:
   # 功能点清单（testcases/0N-*.md，条目形如「- [ ] **A1** ……」）
   checklistDir: ${MOLAR_AUTOTEST_DIR:-../MolarTest/AutoTest}/testcases

@@ -3,7 +3,8 @@ import { existsSync } from 'node:fs'
 import { readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { Step } from '@uta/core'
+import { LoginConfigSchema, type Step } from '@uta/core'
+import { defineFlow, FlowError, z } from '@uta/flows'
 import { runPlan, type RunPlanOptions } from '../src'
 import { startSite, type StaticSite } from './support'
 
@@ -19,6 +20,101 @@ const run = (steps: Step[], extra: Partial<RunPlanOptions> = {}) => {
     actionTimeoutMs: 1_500, assertTimeoutMs: 1_500, ...extra,
   })
 }
+
+describe('上传', () => {
+  const goto: Step = { id: 's1', action: 'goto', value: 'chooser.html' }
+
+  it('target 不是 file input 时当作触发器：点击并接住文件选择器；多个文件用换行分隔', async () => {
+    const a = join(site.evidence, 'a.png')
+    const b = join(site.evidence, 'b.png')
+    await writeFile(a, 'a')
+    await writeFile(b, 'b')
+    const result = await run([
+      goto,
+      { id: 's2', action: 'upload', target: { text: '文件', exact: true }, value: `${a}\n${b}` },
+      { id: 's3', action: 'assertText', target: { testId: 'picked' }, expect: 'a.png,b.png' },
+    ])
+    expect(result.status).toBe('passed')
+    expect(result.stepResults[1]?.actual).toBe('a.png，b.png')
+  })
+
+  it('上一步点击已唤起选择器、upload 的 target 在页面上不存在：接住已弹出的选择器', async () => {
+    const c = join(site.evidence, 'c.png')
+    await writeFile(c, 'c')
+    const result = await run([
+      goto,
+      { id: 's2', action: 'click', target: { text: '文件', exact: true } },
+      { id: 's3', action: 'upload', target: { css: 'input[type="file"]' }, value: c },
+      { id: 's4', action: 'assertText', target: { testId: 'picked' }, expect: 'c.png' },
+    ])
+    expect(result.status).toBe('passed')
+  })
+
+  it('文件不存在判为缺数据并写明路径；既没有目标也没有选择器时报步骤问题', async () => {
+    const absent = await run([goto, { id: 's2', action: 'upload', target: { text: '文件', exact: true }, value: '/no/such/file.png' }])
+    expect(absent.stepResults[1]).toMatchObject({ status: 'failed', error: { kind: 'missing-data', message: '上传文件不存在：/no/such/file.png' } })
+    const file = join(site.evidence, 'd.png')
+    await writeFile(file, 'd')
+    const nowhere = await run([goto, { id: 's2', action: 'upload', target: { css: 'input.nope' }, value: file }])
+    expect(nowhere.stepResults[1]?.error?.kind).toBe('locator')
+    expect(nowhere.stepResults[1]?.error?.message).toContain('没有弹出文件选择器')
+  })
+})
+
+describe('积木与会话', () => {
+  const pickUser = defineFlow({
+    id: 'demo.pickUser',
+    description: '选一个用户名',
+    params: z.object({ prefix: z.string() }),
+    outputs: ['user'],
+    run: async (ctx, { prefix }) => {
+      ctx.log(`pick ${prefix}`)
+      return { user: `${prefix}alice` }
+    },
+  })
+
+  it('use 步骤：参数里的绑定先解析；输出写回数据，后续步骤可引用（执行前不算缺数据）', async () => {
+    const logs: string[] = []
+    const result = await run([
+      { id: 's1', action: 'use', flow: 'demo.pickUser', params: { prefix: '${data.prefix}' } },
+      { id: 's2', action: 'goto', value: 'login.html' },
+      { id: 's3', action: 'fill', target: { label: '用户名' }, value: '${data.user}' },
+      { id: 's4', action: 'fill', target: { label: '密码' }, value: 'secret' },
+      { id: 's5', action: 'click', target: { role: 'button', name: '登录' } },
+      { id: 's6', action: 'assertText', target: { testId: 'welcome' }, expect: '欢迎，mr-alice' },
+    ], { data: { prefix: 'mr-' }, flows: [pickUser], hooks: { onLog: (message) => logs.push(message) } })
+    expect(result.status).toBe('passed')
+    expect(result.stepResults[0]).toMatchObject({ status: 'passed', actual: 'user=mr-alice' })
+    expect(logs).toContain('pick mr-')
+    expect(logs).toContain('▶ s1 use demo.pickUser')
+  })
+
+  it('积木不存在按步骤问题记录；积木抛 FlowError 按它声明的归因记录', async () => {
+    const missing = await run([{ id: 's1', action: 'use', flow: 'demo.nope' }, { id: 's2', action: 'assertUrl', expect: 'x' }], { flows: [pickUser] })
+    expect(missing.stepResults[0]).toMatchObject({ status: 'failed', error: { kind: 'locator', message: '项目没有积木 demo.nope' } })
+    const broken = defineFlow({ ...pickUser, id: 'demo.broken', run: async () => { throw new FlowError('data-missing', '缺少订单') } })
+    const failed = await run([{ id: 's1', action: 'use', flow: 'demo.broken', params: { prefix: '' } }], { flows: [broken] })
+    expect(failed.stepResults[0]?.error).toEqual({ kind: 'missing-data', message: '缺少订单' })
+  })
+
+  it('会话失败：不执行任何步骤，第一步记为失败并附截图', async () => {
+    const result = await run([{ id: 's1', action: 'goto', value: 'login.html' }, { id: 's2', action: 'assertUrl', expect: 'login' }], {
+      session: { config: LoginConfigSchema.parse({ url: 'login.html' }), role: 'admin', missingVars: ['DEMO_PASSWORD'], authFile: join(site.evidence, 'auth', 'admin.json') },
+    })
+    expect(result.status).toBe('failed')
+    expect(result.stepResults[0]).toMatchObject({ stepId: 's1', status: 'failed', error: { kind: 'missing-data' }, screenshot: `evidence/run${seq}/session.png` })
+    expect(result.stepResults[0]?.error?.message).toBe('登录会话失败：缺少 admin 的登录账号：请在 .env 中填写 DEMO_PASSWORD')
+    expect(result.stepResults[1]).toEqual({ stepId: 's2', status: 'skipped', durationMs: 0 })
+  })
+
+  it('跳转超时判为 navigation；localStorage 在页面脚本执行前写入', async () => {
+    const result = await run([
+      { id: 's1', action: 'goto', value: 'login.html' },
+      { id: 's2', action: 'assertUrl', expect: 'login' },
+    ], { localStorage: { LOCALE: 'zh-CN' }, navigationTimeoutMs: 5_000 })
+    expect(result.status).toBe('passed')
+  })
+})
 
 describe('demo 站点四类结果', () => {
   it('登录通过：每步截图，产出录像与 trace，推送画面帧', async () => {

@@ -56,7 +56,18 @@ roles: [compiler, repairer]
 - 步骤里凡是出现 `${data.key}`，这个 key 必须在 `data` 中声明，否则计划会被门禁退回。
 - 标成 `setup` 的 key，必须在 setup 阶段有真正创建它的步骤；不能只声明、不创建。
 
-### 4. 建流程
+### 4. 用积木到达页面、准备前置对象
+
+先调用 `list_flows`：
+
+- **登录**：项目配置了登录时，执行前会自动复用或建立会话。不要写登录步骤，也不要打开登录页。
+- **到达页面**：准备阶段用积木找到前置对象、打开目标页面，不要手写猜测的地址（`goto task-v2/detail?...` 这类地址往往是错的）。
+- **调用写法**：`{ "id": "s1", "stage": "setup", "action": "use", "flow": "<积木 id>", "params": { … } }`。
+- **积木输出**：在后续步骤里用 `${data.<key>}` 引用，不需要在 `data` 里声明；在产出它的积木之前引用会被退回。
+- **枚举参数**（工具类型、页面名等）写字面值，不要写成 `${data.x}`。
+- **没有合适的积木时**：照常用 Step DSL 编写，并在 rationale 写明「建议新增积木：…」。
+
+### 5. 建流程
 
 每个 step 都要带 `stage`，顺序为：
 
@@ -70,7 +81,7 @@ roles: [compiler, repairer]
 
 `caseRef` 仍然指向用例原句（0 起，预期句接在步骤句之后）。由你推断出来的准备、清理步骤可以不填。
 
-### 5. 记录决策点
+### 6. 记录决策点
 
 凡是用例没写死、需要你做选择的地方，都写进 `decisions`。每个决策点包含 `id`、`question`、`options`、`chosen`、`reason`、`stepIds`。
 
@@ -83,7 +94,7 @@ roles: [compiler, repairer]
 
 `chosen` 必须是 `options` 之一，`stepIds` 必须是真实存在的步骤 id。`reason` 要说清为什么不选其他候选，例如「标注节点会额外触发 02-C6 的选团队分支」。
 
-### 6. 页面结构不确定时
+### 7. 页面结构不确定时
 
 - `playwright` MCP 可用：先打开目标页面读快照，再确定 locator。
 - MCP 不可用：按项目知识和常见中文控件名编译，把**关键假设**写进 rationale（例如「假设弹窗确认按钮叫『确定』」）。人会在审批或门禁时修正，这比拒绝编译更有价值。
@@ -97,6 +108,7 @@ roles: [compiler, repairer]
 - 因为「句子不规范 / 信息不足」直接放弃。信息不足时写出假设，然后继续编译。
 - 编造 `testId`。
 - 加登录步骤，或者切换账号重新登录（会顶掉已存的登录态）。
+- 项目有积木时手写猜测的页面地址。
 - 写没有断言的计划，或者断言与用例预期无关。
 - 在一个计划里验证多个清单条目。相邻条目只用于理解边界。
 
@@ -117,9 +129,8 @@ roles: [compiler, repairer]
 
 ```json
 {
-  "rationale": "被测行为：删除有数据的节点会被拦截，必须选择数据转移目标后才能删除。触发：对一个有数据的非内置节点执行删除。预期：弹出拦截提示并要求选择目标节点；选择并确认后节点被删除，节点 Tab 中不再出现。前置：任务有工作流，且存在一个有数据的非内置节点。假设：任务详情地址为 task-v2/detail?taskId=…；节点删除入口是选中节点 Tab 后的「删除」按钮；拦截弹窗包含「转移」字样，确认按钮叫「确定」；「合格数据」节点可以作为转移目标。画布是 Canvas，无法用 DOM 新建节点并灌入数据，所以有数据的节点只能由人提供；该节点会被本用例删除，每次执行前需要重新准备。",
+  "rationale": "被测行为：删除有数据的节点会被拦截，必须选择数据转移目标后才能删除。触发：对一个有数据的非内置节点执行删除。预期：弹出拦截提示并要求选择目标节点；选择并确认后节点被删除，节点 Tab 中不再出现。前置：任务有工作流，且存在一个有数据的非内置节点。用积木 molar.ensureTask 取目录预定义的 IAT 任务（已有导入数据），再用 molar.openTaskPage 打开工作流页。假设：节点删除入口是选中节点 Tab 后的「删除」按钮；拦截弹窗包含「转移」字样，确认按钮叫「确定」；「合格数据」节点可以作为转移目标。画布是 Canvas，无法用 DOM 新建节点并灌入数据，所以有数据的节点只能由人提供；该节点会被本用例删除，每次执行前需要重新准备。",
   "data": [
-    { "key": "taskId", "source": "catalog", "ref": "task.iat", "reason": "图像通用任务已有导入数据，工作流可编辑" },
     { "key": "sourceNode", "source": "human", "reason": "需要一个有数据、可删除的非内置节点名称；画布是 Canvas，无法用 DOM 新建节点并导入数据" }
   ],
   "decisions": [
@@ -127,8 +138,8 @@ roles: [compiler, repairer]
     { "id": "d2", "question": "数据转移到哪个节点？", "options": ["合格数据", "标注"], "chosen": "合格数据", "reason": "内置节点始终存在；标注节点会额外要求选择接收团队（02-C6），本条只验证基础拦截", "stepIds": ["s8", "s9"] }
   ],
   "steps": [
-    { "id": "s1", "stage": "setup", "action": "goto", "value": "task-v2/detail?taskId=${data.taskId}" },
-    { "id": "s2", "stage": "setup", "action": "click", "target": { "role": "tab", "name": "工作流" } },
+    { "id": "s1", "stage": "setup", "action": "use", "flow": "molar.ensureTask", "params": { "tool": "IAT", "ref": "task.iat" } },
+    { "id": "s2", "stage": "setup", "action": "use", "flow": "molar.openTaskPage", "params": { "taskId": "${data.taskId}", "page": "workflow" } },
     { "id": "s3", "stage": "setup", "action": "assertVisible", "target": { "text": "原始数据" }, "note": "确认画布已加载" },
     { "id": "s4", "stage": "action", "action": "click", "target": { "role": "tab", "name": "${data.sourceNode}" }, "note": "选中有数据的节点" },
     { "id": "s5", "stage": "action", "action": "click", "target": { "role": "button", "name": "删除" }, "caseRef": 0 },

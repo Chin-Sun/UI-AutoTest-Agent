@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { DataBinding, Step, Target } from '@uta/core'
+import type { DataBinding, Project, Step, Target } from '@uta/core'
 import type { BusEvent, UsageRecord } from '../src/api'
 
 // 实时日志依赖 WebSocket：替换 useBus，由测试直接投递事件
@@ -14,6 +14,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 
 const { AsyncButton, LiveLog, LOG_LIMIT, Modal, Pill, StepTable, TargetEditor, TokenUsage } = await import('../src/components')
 const { PlanData, PlanDecisions } = await import('../src/pages/Plans')
+const { LoginStatus } = await import('../src/pages/Components')
 
 afterEach(cleanup)
 
@@ -130,6 +131,25 @@ describe('StepTable', () => {
     expect(onChange.mock.lastCall![0][0]!.stage).toBeUndefined()
   })
 
+  it('积木步骤：显示积木 id 与参数；参数失焦后解析，非法 JSON 保留原值；可改积木 id', () => {
+    const useStep: Step = { id: 's1', action: 'use', flow: 'molar.ensureTask', params: { tool: 'IAT' } }
+    const { unmount } = render(<StepTable steps={[useStep]} />)
+    expect(within(rows()[0]!).getByText('积木')).toBeTruthy()
+    expect(within(rows()[0]!).getByText('molar.ensureTask')).toBeTruthy()
+    expect(within(rows()[0]!).getByText('{"tool":"IAT"}')).toBeTruthy()
+    unmount()
+
+    const onChange = vi.fn<(steps: Step[]) => void>()
+    render(<StepTable steps={[useStep]} editable onChange={onChange} />)
+    fireEvent.blur(screen.getByRole('textbox', { name: '积木参数' }), { target: { value: '{"tool":"PCAT"}' } })
+    expect(onChange.mock.lastCall![0][0]!.params).toEqual({ tool: 'PCAT' })
+    onChange.mockClear()
+    fireEvent.blur(screen.getByRole('textbox', { name: '积木参数' }), { target: { value: '{坏' } })
+    expect(onChange).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByRole('textbox', { name: '积木' }), { target: { value: 'molar.openTaskPage' } })
+    expect(onChange.mock.lastCall![0][0]!.flow).toBe('molar.openTaskPage')
+  })
+
   it('不传 showStage 时没有阶段列', () => {
     render(<StepTable steps={steps} />)
     expect(screen.queryByRole('columnheader', { name: '阶段' })).toBeNull()
@@ -185,6 +205,25 @@ describe('TokenUsage', () => {
   })
 })
 
+describe('LoginStatus', () => {
+  const base: Project = { id: 'p', name: 'P', baseURL: 'http://x', authRoles: {}, slowMo: 0, viewport: { width: 1, height: 1 }, knowledgeSkills: [], importers: {}, testData: [] }
+  const login = (accounts: NonNullable<Project['login']>['accounts']): Project['login'] => ({
+    url: '/login', accounts, fields: {}, beforeSubmit: [], afterSubmit: [], success: {}, failures: [], check: { url: '/' },
+  })
+
+  it('未配置登录 / 没有账号 / 已配置 / 缺变量', () => {
+    const { rerender } = render(<LoginStatus project={base} />)
+    expect(screen.getByText(/未配置/)).toBeTruthy()
+    rerender(<LoginStatus project={{ ...base, login: login({}) }} />)
+    expect(screen.getByText('没有配置账号')).toBeTruthy()
+    rerender(<LoginStatus project={{ ...base, login: login({ admin: { configured: true }, viewer: { configured: false, usernameVar: 'V_USER', passwordVar: 'V_PASS' }, guest: { configured: false } }) }} />)
+    expect(screen.getByText('已配置')).toBeTruthy()
+    expect(screen.getByText('在 .env 填写 V_USER、V_PASS')).toBeTruthy()
+    expect(screen.getByText('缺少账号')).toBeTruthy()
+    expect(screen.getByText('/login')).toBeTruthy()
+  })
+})
+
 describe('计划数据 / 决策点', () => {
   const data = [
     { key: 'taskId', source: 'catalog' as const, ref: 'task.iat', reason: '有数据' },
@@ -207,6 +246,17 @@ describe('计划数据 / 决策点', () => {
     expect(rows()[1]!.className).toBe('')
     expect(screen.getByText('用例数据：人补的（优先使用）')).toBeTruthy()
     expect(screen.queryByRole('textbox')).toBeNull()
+  })
+
+  it('用例数据覆盖了计划里的值：给出警告并可一键清除用例数据；值相同时不警告', async () => {
+    const onClear = vi.fn<(key: string) => Promise<unknown>>().mockResolvedValue(undefined)
+    const { rerender } = render(<PlanData data={data} caseData={{ name: '人填的' }} editable={false} onChange={vi.fn()} onClearCaseData={onClear} />)
+    expect(screen.getByText(/执行时用的是用例数据「人填的」/)).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '清除用例数据' })) })
+    expect(onClear).toHaveBeenCalledWith('name')
+
+    rerender(<PlanData data={data} caseData={{ name: 'uta-{{ts}}' }} editable={false} onChange={vi.fn()} onClearCaseData={onClear} />)
+    expect(screen.queryByText(/不会生效/)).toBeNull()
   })
 
   it('没有数据或决策点时不渲染', () => {
