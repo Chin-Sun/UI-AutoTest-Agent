@@ -13,6 +13,23 @@ export function ErrorLine({ error }: { error: string | undefined }) {
   return error ? <p className="error">{error}</p> : null
 }
 
+/** 统一样式的复选框：label + input 外壳，内容由调用方通过 children 组合 */
+export function Checkbox({ checked, onChange, disabled, title, className, children }: {
+  checked: boolean
+  onChange: (checked: boolean) => void
+  disabled?: boolean
+  title?: string
+  className?: string
+  children?: ReactNode
+}) {
+  return (
+    <label className={['check', disabled ? 'disabled' : '', className ?? ''].filter(Boolean).join(' ')} title={title}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      {children}
+    </label>
+  )
+}
+
 /** 异步按钮：执行期间禁用，并把错误显示在旁边 */
 export function AsyncButton({ onClick, children, kind = 'primary', disabled }: { onClick: () => Promise<unknown>, children: ReactNode, kind?: string, disabled?: boolean }) {
   const [busy, setBusy] = useState(false)

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, useReload, type Project, type StepPlan, type TestCase } from '../api'
-import { AsyncButton, ErrorLine, Pill } from '../components'
+import { AsyncButton, Checkbox, ErrorLine, Pill } from '../components'
 import { formatDataLines, lines, parseDataLines } from '../format'
 import { PLAN_STATUS_LABEL } from '../labels'
 import type { Go } from '../App'
@@ -163,19 +163,18 @@ function ChecklistImporter({ projectId }: { projectId: string }) {
       </div>
       <div className="checklist">
         {items.map((item) => (
-          <label key={item.key} className="check">
-            <input
-              type="checkbox"
-              checked={picked.has(item.key)}
-              onChange={(e) => {
-                const next = new Set(picked)
-                if (e.target.checked) next.add(item.key)
-                else next.delete(item.key)
-                setPicked(next)
-              }}
-            />
+          <Checkbox
+            key={item.key}
+            checked={picked.has(item.key)}
+            onChange={(value) => {
+              const next = new Set(picked)
+              if (value) next.add(item.key)
+              else next.delete(item.key)
+              setPicked(next)
+            }}
+          >
             <span className="mono">{item.key}</span> {item.title}
-          </label>
+          </Checkbox>
         ))}
       </div>
     </section>

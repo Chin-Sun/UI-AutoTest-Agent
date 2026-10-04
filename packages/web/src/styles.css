@@ -50,7 +50,7 @@ button.danger { background: #fdeaea; color: var(--bad); }
 button.linklike { background: none; border: 0; padding: 0; color: var(--brand); font: inherit; text-align: left; white-space: normal; }
 button.linklike:hover { text-decoration: underline; }
 button.linklike.small { font-size: 12px; }
-input, select, textarea { font: inherit; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; background: #fff; color: var(--ink); min-width: 0; }
+input:not([type=checkbox]):not([type=radio]), select, textarea { font: inherit; border: 1px solid var(--line); border-radius: 7px; padding: 5px 9px; background: #fff; color: var(--ink); min-width: 0; }
 textarea { width: 100%; resize: vertical; }
 .form { display: flex; flex-direction: column; gap: 10px; }
 .form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
@@ -60,6 +60,8 @@ textarea { width: 100%; resize: vertical; }
 .actions.column { flex-direction: column; align-items: stretch; margin-top: 0; }
 .check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 .check.disabled { opacity: .5; cursor: not-allowed; }
+.check input[type=checkbox] { width: 16px; height: 16px; margin: 0; flex-shrink: 0; accent-color: var(--brand); cursor: pointer; }
+.check.disabled input[type=checkbox] { cursor: not-allowed; }
 .checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px 16px; max-height: 320px; overflow: auto; margin-top: 10px; }
 .checklist.compact { max-height: 180px; }
 

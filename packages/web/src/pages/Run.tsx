@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, fileUrl, useBus, useReload, type Run, type StepPlan, type StepResult, type TestCase } from '../api'
-import { AsyncButton, LiveLog, Modal, Pill, StepTable, TokenUsage } from '../components'
+import { AsyncButton, Checkbox, LiveLog, Modal, Pill, StepTable, TokenUsage } from '../components'
 import { RUN_STATUS_LABEL, TRIGGER_LABEL, time } from '../labels'
 import type { Go } from '../App'
 
@@ -80,27 +80,25 @@ export function RunPage({ projectId, runId, go }: { projectId: string, runId?: s
         <h2>选择要执行的用例</h2>
         <div className="checklist compact">
           {cases.map((c) => (
-            <label key={c.id} className={`check ${approved[c.id] ? '' : 'disabled'}`} title={approved[c.id] ? '' : '需要先批准计划'}>
-              <input
-                type="checkbox"
-                disabled={!approved[c.id]}
-                checked={picked.has(c.id)}
-                onChange={(e) => {
-                  const next = new Set(picked)
-                  if (e.target.checked) next.add(c.id)
-                  else next.delete(c.id)
-                  setPicked(next)
-                }}
-              />
+            <Checkbox
+              key={c.id}
+              disabled={!approved[c.id]}
+              title={approved[c.id] ? '' : '需要先批准计划'}
+              checked={picked.has(c.id)}
+              onChange={(value) => {
+                const next = new Set(picked)
+                if (value) next.add(c.id)
+                else next.delete(c.id)
+                setPicked(next)
+              }}
+            >
               {c.title} {approved[c.id] ? <span className="muted small">v{approved[c.id]!.version}</span> : <span className="muted small">未批准</span>}
-            </label>
+            </Checkbox>
           ))}
         </div>
         <div className="actions">
-          <label className="check"><input type="checkbox" checked={headed} onChange={(e) => setHeaded(e.target.checked)} />同时打开有头浏览器</label>
-          <label className={`check ${obsReady ? '' : 'disabled'}`} title={obsReady ? '' : '在组件中心启用 obs-recorder'}>
-            <input type="checkbox" disabled={!obsReady} checked={obs} onChange={(e) => setObs(e.target.checked)} />OBS 录制
-          </label>
+          <Checkbox checked={headed} onChange={setHeaded}>同时打开有头浏览器</Checkbox>
+          <Checkbox disabled={!obsReady} title={obsReady ? '' : '在组件中心启用 obs-recorder'} checked={obs} onChange={setObs}>OBS 录制</Checkbox>
           <button className="ghost" onClick={() => setPicked(new Set(cases.filter((c) => approved[c.id]).map((c) => c.id)))}>全选可执行</button>
           <AsyncButton
             disabled={picked.size === 0}
